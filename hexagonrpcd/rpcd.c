@@ -119,7 +119,7 @@ static int create_shell_pd(int fd, const char *create_shell)
 		goto err_close_dmabuf;
 	}
 
-	read(shellfd, buf, stats.st_size);
+		if ((off_t)read(shellfd, buf, stats.st_size) != stats.st_size) { close(shellfd); free(buf); return 1; }
 
 	init.file = (__u64) buf;
 	init.filefd = dmabuf.fd;

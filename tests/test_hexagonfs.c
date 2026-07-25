@@ -56,8 +56,8 @@ static int test_mapped_seq_read(const char *path)
 	memset(buf1, 0, 6);
 	memset(buf2, 0, 6);
 
-	read(fd, buf1, 1);
-	read(fd, &buf1[1], 5);
+	(void)!read(fd, buf1, 1);
+	(void)!read(fd, &buf1[1], 5);
 	hexagonfs_mapped_ops.read(&file, 1, buf2);
 	hexagonfs_mapped_ops.read(&file, 5, &buf2[1]);
 	if (memcmp(buf1, buf2, 6))
@@ -67,7 +67,7 @@ static int test_mapped_seq_read(const char *path)
 	memset(buf2, 0, 27);
 
 	lseek(fd, 819 - 6, SEEK_CUR);
-	read(fd, buf1, 27);
+	(void)!read(fd, buf1, 27);
 	hexagonfs_mapped_ops.seek(&file, 819 - 6, SEEK_CUR);
 	hexagonfs_mapped_ops.read(&file, 27, buf2);
 	if (memcmp(buf1, buf2, 27))

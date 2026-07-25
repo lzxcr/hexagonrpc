@@ -32,23 +32,23 @@ int main(int argc, char **argv) {
     /* Setup: mkdir -p all at once, then create files */
     char cmd[1024];
     snprintf(cmd,sizeof(cmd),"mkdir -p %s/acdb %s/dsp/adsp %s/sensors/config %s/sensors/registry %s/socinfo 2>/dev/null",root,root,root,root,root);
-    system(cmd);
+    (void)!system(cmd);
 
     int fd; char p[512], buf[256];
     snprintf(p,sizeof(p),"%s/acdb/test.bin",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){write(fd,"hello_acdb_data",15);close(fd);}
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"hello_acdb_data",15);close(fd);}
     snprintf(p,sizeof(p),"%s/dsp/adsp/libtest_skel.so",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){write(fd,"SKEL_DATA_FOR_LOAD",18);close(fd);}
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"SKEL_DATA_FOR_LOAD",18);close(fd);}
     snprintf(p,sizeof(p),"%s/dsp/adsp/libtest2.so",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){write(fd,"ABCDEFGHIJKLMNOPQRSTUVWXYZ",26);close(fd);}
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"ABCDEFGHIJKLMNOPQRSTUVWXYZ",26);close(fd);}
     snprintf(p,sizeof(p),"%s/sensors/config/test.json",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){write(fd,"{sns:1}",7);close(fd);}
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"{sns:1}",7);close(fd);}
     snprintf(p,sizeof(p),"%s/sensors/registry/test.reg",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){write(fd,"REG_1234",8);close(fd);}
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"REG_1234",8);close(fd);}
     snprintf(p,sizeof(p),"%s/sensors/sns_reg.conf",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){write(fd,"#CFG",4);close(fd);}
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"#CFG",4);close(fd);}
     snprintf(p,sizeof(p),"%s/socinfo/machine",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){write(fd,"TEST_SOC",8);close(fd);}
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"TEST_SOC",8);close(fd);}
 
     /* Build HexagonFS */
     struct hexagonfs_fd *fds[256]={0};
@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
     T("open HexagonFS root",rf>=0);
     if(rf<0){fprintf(stderr,"FATAL\n");return 1;}
 
-    struct stat st; int r; off_t pos; ssize_t n;
+    struct stat st; int r; ssize_t n;
     char nm[256];
 
     /* Phase 1: Skel library loading */
@@ -177,6 +177,6 @@ int main(int argc, char **argv) {
 
     printf("\n\033[1m=== %d/%d passed ===\033[0m\n",passed,total);
     /* cleanup */
-    snprintf(cmd,sizeof(cmd),"rm -rf %s",root);system(cmd);
+    snprintf(cmd,sizeof(cmd),"rm -rf %s",root);(void)!system(cmd);
     return passed<total ? 1 : 0;
 }

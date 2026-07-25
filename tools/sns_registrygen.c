@@ -152,7 +152,7 @@ void create_registry_file(int dirfd, const char *name, struct json_object *obj)
 	if (fd == -1)
 		return;
 
-	write(fd, contents, strlen(contents));
+	(void)!write(fd, contents, strlen(contents));
 
 	close(fd);
 
