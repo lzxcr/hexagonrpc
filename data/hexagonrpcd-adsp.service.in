@@ -1,0 +1,14 @@
+[Unit]
+Description=HexagonRPC — Qualcomm ADSP FastRPC daemon (root PD)
+Wants=hexagonrpcd-adsp-sensorspd.service
+ConditionPathExists=/dev/fastrpc-adsp
+
+[Service]
+ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-adsp -d adsp
+Restart=always
+RestartSec=3
+User=hexagonrpc
+Group=hexagonrpc
+
+[Install]
+WantedBy=multi-user.target

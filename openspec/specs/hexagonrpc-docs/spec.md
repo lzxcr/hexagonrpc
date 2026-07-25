@@ -13,13 +13,12 @@ HexagonRPC SHALL 由以下四个主要组件组成：
 
 - **libhexagonrpc**：共享库，提供 ioctl 包装器 `fastrpc2()` / `fastrpc()`、`remotectl_open/close()` 客户端帮助函数和远程方法定义
 - **hexagonrpcd**：守护进程，建立反向隧道并服务 DSP 发来的 RPC 请求
-- **chrecd**：CHRE（Context Hub Runtime Environment）客户端守护进程
 - **HexagonFS**：虚拟文件系统（读写双模式），为 DSP 提供文件访问和 Android 路径 → Linux 路径重定向
 
 #### Scenario: 组件依赖关系
 
 - **WHEN** 系统构建完成
-- **THEN** `hexagonrpcd` 和 `chrecd` 链接到 `libhexagonrpc.so`
+- **THEN** `hexagonrpcd` 链接到 `libhexagonrpc.so`
 - **AND** HexagonFS 实现代码编译进 `hexagonrpcd`
 
 ---
@@ -33,7 +32,6 @@ HexagonRPC SHALL 使用 Meson（>= 1.1）构建，支持可选编译选项。
 - **WHEN** 用户在项目根目录执行 `meson setup build && ninja -C build`
 - **THEN** 产出 `libhexagonrpc.so`（在 `build/libhexagonrpc/`）
 - **AND** 产出 `hexagonrpcd`（在 `build/hexagonrpcd/`）
-- **AND** 产出 `chrecd`（安装在 `$(libexecdir)/hexagonrpc/`）
 
 #### Scenario: 启用详细日志
 
@@ -226,19 +224,6 @@ HexagonFS SHALL 为 DSP 提供只读的虚拟文件系统视图，将路径映�
 
 ---
 
-### Requirement: CHRE 客户端（chrecd）
-
-chrecd SHALL 作为 CHRE 客户端，通过共享 FD 与 DSP 通信。
-
-#### Scenario: CHRE 启动
-
-- **WHEN** `chrecd` 启动且 `HEXAGONRPC_FD` 已设置
-- **THEN** 通过 `remotectl_open("chre_slpi")` 获取接口
-- **AND** 调用 `chre_slpi_start_thread()`
-- **AND** 调用 `chre_slpi_wait_on_thread_exit()` 等待线程结束
-
----
-
 ### Requirement: 接口定义机制
 
 HexagonRPC SHALL 使用 `.def` 文件定义远程方法签名，无需 QAIC IDL 编译器。
@@ -303,11 +288,10 @@ HexagonRPC SHALL 默认启用写入支持，无需额外配置。
 
 ### Requirement: 公共 remotectl
 
-HexagonRPC SHALL 在 `libhexagonrpc` 中提供 `remotectl_open()`/`remotectl_close()` 公共实现，供 `hexagonrpcd` 和 `chrecd` 共用。
+HexagonRPC SHALL 在 `libhexagonrpc` 中提供 `remotectl_open()`/`remotectl_close()` 公共实现，供 `hexagonrpcd` 共用。
 
 #### Scenario: 消除重复代码
 
-- **WHEN** `rpcd.c` 或 `chrecd/main.c` 调用 remotectl_open/close
 - **THEN** 调用 `libhexagonrpc/remotectl.c` 中的共享实现
 - **AND** 不包含本地的重复实现
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=HexagonRPC — Qualcomm CDSP FastRPC daemon
+ConditionPathExists=/dev/fastrpc-cdsp
+
+[Service]
+ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-cdsp -d cdsp
+Restart=always
+RestartSec=3
+User=hexagonrpc
+Group=hexagonrpc
+
+[Install]
+WantedBy=multi-user.target

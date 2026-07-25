@@ -20,4 +20,10 @@ executable('hexagonrpcd',
   dependencies : json_c,
   install_dir : get_option('bindir'),
 )
-install_man('hexagonrpcd.1')
+install_man('hexagonrpcd.8')
+
+# Man page symlinks for each domain
+meson.add_install_script(
+  '../data/install-man-symlinks.sh',
+  get_option('prefix') / get_option('mandir') / 'man8',
+)

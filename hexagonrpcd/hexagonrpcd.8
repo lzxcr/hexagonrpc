@@ -1,0 +1,55 @@
+'\" t
+.TH HEXAGONRPCD 8 "2025-07" "hexagonrpcd v0.5.0" "System Manager's Manual"
+.SH NAME
+hexagonrpcd \- Qualcomm DSP FastRPC reverse tunnel daemon
+.SH SYNOPSIS
+\fBhexagonrpcd\fP [\fIoptions\fP] \fB\-f\fP \fIDEVICE\fP
+.SH DESCRIPTION
+hexagonrpcd attaches to a Qualcomm Hexagon DSP via the FastRPC kernel driver,
+establishes a reverse tunnel for DSP-side RPC calls, and serves file I/O and
+memory allocation requests from the DSP. File paths are transparently redirected
+through HexagonFS, mapping Android-style paths to configurable Linux paths.
+.SH OPTIONS
+.TP
+\fB\-f \fIDEVICE\fP
+FastRPC device node (e.g. /dev/fastrpc-adsp). Required.
+.TP
+\fB\-c \fIPATH\fP
+Create a DSP process domain loading the specified ELF binary (INIT_CREATE).
+.TP
+\fB\-d \fIDSP\fP
+DSP type name for HexagonFS subdirectory (default: empty, e.g. "adsp", "cdsp").
+.TP
+\fB\-p \fIPROGRAM\fP [\fIargs\fP]
+Run client program with shared FastRPC file descriptor.
+.TP
+\fB\-R \fIDIR\fP
+HexagonFS root directory (default: /usr/share/qcom/).
+.TP
+\fB\-s\fP
+Attach to sensors PD (INIT_ATTACH_SNS) instead of root PD.
+.SH HEXAGONFS PATH MAPPINGS
+DSP file paths are redirected as follows:
+.TS
+box tab(|);
+l|l.
+DSP path|Physical path
+/vendor/etc/acdbdata/|{root}/acdb/
+/vendor/etc/sensors/config/|{root}/sensors/config/
+/vendor/etc/sensors/sns_reg_config|{root}/sensors/sns_reg.conf
+/persist/sensors/registry/|{root}/sensors/registry/
+/sys/devices/soc0/|{root}/socinfo/
+/usr/lib/qcom/{dsp}/|{root}/dsp/{dsp}/
+.TE
+.PP
+Hard links: /vendor/ == /system/vendor/, /persist/ == /mnt/vendor/persist/.
+.SH FILES
+/usr/lib/systemd/system/hexagonrpcd-*.service
+/usr/lib/udev/rules.d/60-hexagonrpc.rules
+/usr/lib/sysusers.d/hexagonrpc.conf
+.SH AUTHORS
+The HexagonRPC Contributors <https://github.com/lzxcr/hexagonrpc>
+.SH COPYRIGHT
+Copyright (C) 2023-2025 The HexagonRPC Contributors.
+.LP
+Released under GPL-3.0-or-later.

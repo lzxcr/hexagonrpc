@@ -1,5 +1,5 @@
 [Unit]
-Description=Server for FastRPC remote procedure calls from Qualcomm SDSP
+Description=HexagonRPC — Qualcomm SDSP FastRPC daemon
 ConditionPathExists=/dev/fastrpc-sdsp
 
 [Service]

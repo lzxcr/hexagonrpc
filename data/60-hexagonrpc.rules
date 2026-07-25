@@ -1,0 +1,6 @@
+ACTION=="add", KERNEL=="fastrpc-adsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp.service"
+ACTION=="add", KERNEL=="fastrpc-cdsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-cdsp.service"
+ACTION=="add", KERNEL=="fastrpc-sdsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-sdsp.service"
+ACTION=="add", KERNEL=="fastrpc-gdsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-gdsp.service"
+# Permissions: root:hexagonrpc, mode 0660
+KERNEL=="fastrpc-*", OWNER="root", GROUP="hexagonrpc", MODE="0660"

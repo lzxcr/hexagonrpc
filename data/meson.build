@@ -1,6 +1,8 @@
 systemd_units = [
-  'hexagonrpcd-adsp-rootpd.service',
+  'hexagonrpcd-adsp.service',
+  'hexagonrpcd-adsp-audiopd.service',
   'hexagonrpcd-adsp-sensorspd.service',
+  'hexagonrpcd-cdsp.service',
   'hexagonrpcd-sdsp.service',
 ]
 
@@ -13,3 +15,15 @@ foreach unit : systemd_units
     install_dir: get_option('libdir') / 'systemd/system',
   )
 endforeach
+
+# udev rules
+install_data(
+  '60-hexagonrpc.rules',
+  install_dir: '/usr/lib/udev/rules.d',
+)
+
+# sysusers.d
+install_data(
+  'hexagonrpc.conf',
+  install_dir: '/usr/lib/sysusers.d',
+)

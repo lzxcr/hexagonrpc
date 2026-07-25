@@ -2,7 +2,7 @@
 
 FastRPC ioctl 包装库 + 反向隧道守护进程 + HexagonFS 虚拟文件系统。
 
-用于与 Qualcomm DSP(ADSP/SDSP/CDSP)通信,为 CHRE 等 DSP 程序提供文件服务,
+用于与 Qualcomm DSP(ADSP/SDSP/CDSP)通信,为 DSP 程序提供文件服务,
 支持主线 Linux 上的 Android 固件路径透明重定向。
 
 ## 架构
@@ -10,7 +10,6 @@ FastRPC ioctl 包装库 + 反向隧道守护进程 + HexagonFS 虚拟文件系�
 ```
 ┌─ libhexagonrpc ── 共享库 (fastrpc/fastrpc2/remotectl 包装)
 ├─ hexagonrpcd    ── 守护进程 (反向隧道 + HexagonFS)
-├─ chrecd         ── CHRE 客户端
 └─ HexagonFS      ── 虚拟目录树: Android 路径 → Linux 物理路径
 ```
 

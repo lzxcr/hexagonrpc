@@ -1,0 +1,14 @@
+[Unit]
+Description=HexagonRPC — Qualcomm ADSP FastRPC daemon (audio PD)
+ConditionPathExists=/dev/fastrpc-adsp
+
+[Service]
+# Replace /path/to/audiopd.elf with the actual audio PD ELF for your device
+ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-adsp -d adsp -c /path/to/audiopd.elf
+Restart=always
+RestartSec=3
+User=hexagonrpc
+Group=hexagonrpc
+
+[Install]
+WantedBy=multi-user.target

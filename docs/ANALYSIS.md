@@ -7,7 +7,6 @@
 3. [组件详解](#组件详解)
    - [libhexagonrpc — 共享库](#libhexagonrpc--共享库)
    - [hexagonrpcd — 反向隧道守护进程](#hexagonrpcd--反向隧道守护进程)
-   - [chrecd — CHRE 客户端守护进程](#chrecd--chre-客户端守护进程)
    - [HexagonFS — 虚拟只读文件系统](#hexagonfs--虚拟只读文件系统)
 4. [构建与运行](#构建与运行)
 5. [接口（Interface）体系](#接口interface体系)
@@ -41,8 +40,6 @@ HexagonRPC 是 [Sensor Shell](https://gitlab.com/sensh) 项目对 Qualcomm FastR
 │                    应用处理器 (AP)                     │
 │                                                    │
 │  ┌──────────────┐  ┌──────────────────────────────┐ │
-│  │   chrecd     │  │         hexagonrpcd          │ │
-│  │ (CHRE 客户端) │  │  ┌────────────────────────┐  │ │
 │  │              │  │  │     反向隧道 (listener)   │  │ │
 │  │ fastrpc2()───┼──┼──┤ adsp_listener_next2()   │  │ │
 │  │              │  │  │       ↕                  │  │ │
@@ -209,16 +206,9 @@ while true:
 
 ---
 
-### chrecd — CHRE 客户端守护进程
 
-**文件**: `chrecd/main.c`  
-**产物**: `chrecd`（安装到 `<libexecdir>/hexagonrpc/chrecd`）
 
-Context Hub Runtime Environment (CHRE) 客户端。通过 `HEXAGONRPC_FD` 从 hexagonrpcd 获取 FD，
-然后调用 `chre_slpi_start_thread()` 和 `chre_slpi_wait_on_thread_exit()` 来启动和等待 CHRE 线程。
 
-**注意**: `chrecd/main.c` 中有 `/* TODO move these to libhexagonrpc since most clients use them */` 注释，
-表明 `remotectl_open/close` 函数被 hexagonrpcd 和 chrecd 重复实现了，需要提取到共享库。
 
 ---
 
@@ -333,7 +323,6 @@ ninja -C build install
 安装位置（可通过 meson 选项覆盖）：
 - `libhexagonrpc.so` → `<libdir>/`
 - `hexagonrpcd` → `<bindir>/`
-- `chrecd` → `<libexecdir>/hexagonrpc/`
 - systemd 服务 / Android init rc → 相应系统路径
 
 ### 运行
@@ -352,7 +341,6 @@ hexagonrpcd -f /dev/fastrpc-adsp -s
 hexagonrpcd -f /dev/fastrpc-adsp -R /usr/share/qcom/sdm845/SHIFT/axolotl
 
 # 带子客户端
-hexagonrpcd -f /dev/fastrpc-adsp -p /usr/libexec/hexagonrpc/chrecd
 ```
 
 ### 运行测试
@@ -446,16 +434,11 @@ meson test -C build
 
 在 DSP 上注册反向隧道监听器。
 
-#### 6. chre_slpi (handle 动态)
 
-**文件**: `chrecd/main.c`，定义 `chrecd/interfaces/chre_slpi.def`
 
 | Method ID | 方法名 | 状态 | 说明 |
 |-----------|--------|------|------|
-| 0 | chre_slpi_start_thread | ✅ | 启动 CHRE 线程 |
-| 1 | chre_slpi_wait_on_thread_exit | ✅ | 等待 CHRE 线程退出 |
 
-CHRE 客户端专用接口。
 
 ---
 
@@ -624,7 +607,6 @@ HexagonRPC 实现了 **10 个**。
 3. **>256 字节的大缓冲区**支持（listener.c 硬编码限制）
 4. **rpcmem 集成**：不能使用 Ion/DMA-BUF 从用户空间分配 DSP 可访问内存
 5. **多域支持**：不能区分不同 domain 的会话
-6. **remotectl_open/close 代码重复**：hexagonrpcd 和 chrecd 各有一份
 7. **daemon 自动重启**：不支持 DSP crash 后自动恢复
 8. **缺少写入支持**：整个 HexagonFS 是只读的
 9. **缺少 handle 传递**：listener.c 中明确说 "Handles are not supported"
@@ -635,7 +617,6 @@ HexagonRPC 实现了 **10 个**。
 - 没有配置系统（官方 FastRPC 有 YAML 配置）
 - 没有 udev 规则（官方 FastRPC 有设备权限管理）
 - 只支持 INIT_ATTACH 和 INIT_ATTACH_SNS，不像官方有 audiopd 等多种 PD 支持
-- CHRE 客户端功能极简（仅 start_thread + wait_on_exit）
 
 ---
 

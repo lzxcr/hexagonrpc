@@ -22,7 +22,6 @@ ninja -C build
 |------|------|------|
 | `libhexagonrpc.so` | `build/libhexagonrpc/` | FastRPC ioctl 包装库 |
 | `hexagonrpcd` | `build/hexagonrpcd/` | 反向隧道守护进程 |
-| `chrecd` | `build/chrecd/` | CHRE 客户端守护进程 |
 
 ### 编译选项
 
@@ -68,15 +67,10 @@ hexagonrpcd -f /dev/fastrpc-adsp -R /usr/share/qcom/sdm845/OnePlus/lemonade
 ```bash
 # hexagonrpcd 会设置 HEXAGONRPC_FD 环境变量
 # 客户端程序通过该变量获取共享的文件描述符
-hexagonrpcd -f /dev/fastrpc-adsp -p /usr/libexec/hexagonrpc/chrecd
 ```
 
-### 4. 运行 CHRE 客户端
 
 ```bash
-# chrecd 通过 HEXAGONRPC_FD 获取 FD
-# 自动启动 CHRE 线程并等待退出
-chrecd
 ```
 
 ## 命令行参数参考
