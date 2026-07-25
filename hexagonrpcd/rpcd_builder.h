@@ -1,11 +1,11 @@
 /*
  * FastRPC virtual filesystem builder - header file
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -25,5 +25,6 @@
 #include "hexagonfs.h"
 
 struct hexagonfs_dirent *construct_root_dir(const char *prefix, const char *dsp);
+struct hexagonfs_dirent *construct_root_dir_with_prefix(const char *prefix, const char *dsp);
 
 #endif

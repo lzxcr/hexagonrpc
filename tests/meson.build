@@ -26,3 +26,14 @@ test_hexagonfs = executable('test_hexagonfs',
 
 test('iobuffer', test_iobuffer)
 test('hexagonfs', test_hexagonfs, args : [sample_file])
+
+test_dsp_sim = executable('test_dsp_simulation',
+  'test_dsp_simulation.c',
+  '../hexagonrpcd/hexagonfs.c',
+  '../hexagonrpcd/hexagonfs_mapped.c',
+  '../hexagonrpcd/hexagonfs_virt_dir.c',
+  '../hexagonrpcd/rpcd_builder.c',
+  c_args : cflags,
+  include_directories : include,
+)
+test('dsp-simulation', test_dsp_sim, timeout : 30)

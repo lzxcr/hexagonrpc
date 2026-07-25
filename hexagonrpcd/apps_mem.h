@@ -1,7 +1,7 @@
 /*
  * FastRPC operating system interface - context initialization
  *
- * Copyright (C) 2024 The Sensor Shell Contributors
+ * Copyright (C) 2024 The HexagonRPC Contributors
  *
  * This file is part of HexagonRPC.
  *

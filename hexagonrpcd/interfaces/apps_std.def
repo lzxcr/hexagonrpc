@@ -1,11 +1,11 @@
 /*
  * FastRPC operating system interface
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -24,15 +24,42 @@
 
 #include <libhexagonrpc/interface.h>
 
-HEXAGONRPC_DEFINE_REMOTE_METHOD(1, apps_std_freopen, 1, 0, 1, 1)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(0, apps_std_fopen, 0, 2, 1, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(1, apps_std_freopen, 1, 2, 1, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(2, apps_std_fflush, 8, 0, 0, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(3, apps_std_fclose, 1, 0, 0, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(4, apps_std_fread, 1, 0, 2, 1)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(5, apps_std_fwrite, 1, 1, 2, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(6, apps_std_fgetpos, 1, 0, 1, 1)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(7, apps_std_fsetpos, 1, 1, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(8, apps_std_ftell, 1, 0, 1, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(9, apps_std_fseek, 3, 0, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(10, apps_std_flen, 1, 0, 2, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(11, apps_std_rewind, 1, 0, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(12, apps_std_feof, 1, 0, 1, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(13, apps_std_ferror, 1, 0, 1, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(14, apps_std_clearerr, 1, 0, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(15, apps_std_print_string, 0, 1, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(16, apps_std_getenv, 0, 1, 1, 1)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(17, apps_std_setenv, 1, 2, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(18, apps_std_unsetenv, 0, 1, 0, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(19, apps_std_fopen_with_env, 0, 4, 1, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(20, apps_std_fgets, 1, 0, 1, 1)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(21, apps_std_get_search_paths_with_env, 0, 2, 2, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(22, apps_std_fileExists, 0, 1, 1, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(23, apps_std_fsync, 1, 0, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(24, apps_std_fremove, 0, 1, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(25, apps_std_fdopen_decrypt, 1, 0, 1, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(26, apps_std_opendir, 0, 1, 2, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(27, apps_std_closedir, 2, 0, 0, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(28, apps_std_readdir, 2, 0, 66, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(29, apps_std_mkdir, 1, 1, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(30, apps_std_rmdir, 0, 1, 0, 0)
 HEXAGONRPC_DEFINE_REMOTE_METHOD(31, apps_std_stat, 1, 1, 24, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(32, apps_std_ftrunc, 2, 0, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(33, apps_std_frename, 0, 2, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(34, apps_std_fopen_fd, 0, 2, 2, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(35, apps_std_fclose_fd, 1, 0, 0, 0)
+HEXAGONRPC_DEFINE_REMOTE_METHOD(36, apps_std_fopen_with_env_fd, 0, 4, 2, 0)
 
 #endif /* INTERFACE_APPS_STD_DEF */

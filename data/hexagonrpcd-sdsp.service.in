@@ -6,8 +6,8 @@ ConditionPathExists=/dev/fastrpc-sdsp
 ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-sdsp -d sdsp -s
 Restart=always
 RestartSec=3
-User=fastrpc
-Group=fastrpc
+User=hexagonrpc
+Group=hexagonrpc
 
 [Install]
 WantedBy=multi-user.target

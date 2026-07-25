@@ -4,7 +4,8 @@ cc_library_shared {
     srcs: [
         "context.c",
         "fastrpc.c",
-        "interfaces.c",
+        "method_defs.c",
+        "remotectl.c",
         "session.c",
     ],
     vendor: true,

@@ -1,11 +1,11 @@
 /*
  * Virtual read-only filesystem for Hexagon processors
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -276,4 +276,89 @@ int hexagonfs_fstat(struct hexagonfs_fd **fds, int fileno, struct stat *stats)
 		return -ENOSYS;
 
 	return fd->ops->stat(fd, stats);
+}
+
+ssize_t hexagonfs_write(struct hexagonfs_fd **fds, int fileno, size_t size, const void *ptr)
+{
+	struct hexagonfs_fd *fd;
+
+	if (fileno < 0 || fileno >= HEXAGONFS_MAX_FD)
+		return -EBADF;
+
+	fd = fds[fileno];
+	if (fd == NULL)
+		return -EBADF;
+
+	if (fd->ops->write == NULL)
+		return -ENOSYS;
+
+	return fd->ops->write(fd, size, ptr);
+}
+
+int hexagonfs_ftruncate(struct hexagonfs_fd **fds, int fileno, off_t length)
+{
+	struct hexagonfs_fd *fd;
+
+	if (fileno < 0 || fileno >= HEXAGONFS_MAX_FD)
+		return -EBADF;
+
+	fd = fds[fileno];
+	if (fd == NULL)
+		return -EBADF;
+
+	if (fd->ops->truncate == NULL)
+		return -ENOSYS;
+
+	return fd->ops->truncate(fd, length);
+}
+
+int hexagonfs_unlink(struct hexagonfs_fd **fds, int dirfd, const char *name)
+{
+	struct hexagonfs_fd *fd;
+
+	if (dirfd < 0 || dirfd >= HEXAGONFS_MAX_FD)
+		return -EBADF;
+
+	fd = fds[dirfd];
+	if (fd == NULL)
+		return -EBADF;
+
+	if (fd->ops->unlink == NULL)
+		return -ENOSYS;
+
+	return fd->ops->unlink(fd, name);
+}
+
+int hexagonfs_mkdir(struct hexagonfs_fd **fds, int dirfd, const char *name, mode_t mode)
+{
+	struct hexagonfs_fd *fd;
+
+	if (dirfd < 0 || dirfd >= HEXAGONFS_MAX_FD)
+		return -EBADF;
+
+	fd = fds[dirfd];
+	if (fd == NULL)
+		return -EBADF;
+
+	if (fd->ops->mkdir == NULL)
+		return -ENOSYS;
+
+	return fd->ops->mkdir(fd, name, mode);
+}
+
+int hexagonfs_rmdir(struct hexagonfs_fd **fds, int dirfd, const char *name)
+{
+	struct hexagonfs_fd *fd;
+
+	if (dirfd < 0 || dirfd >= HEXAGONFS_MAX_FD)
+		return -EBADF;
+
+	fd = fds[dirfd];
+	if (fd == NULL)
+		return -EBADF;
+
+	if (fd->ops->rmdir == NULL)
+		return -ENOSYS;
+
+	return fd->ops->rmdir(fd, name);
 }

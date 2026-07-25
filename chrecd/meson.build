@@ -1,5 +1,5 @@
 executable('chrecd',
-  'interfaces.c',
+  'method_defs.c',
   'main.c',
   c_args : cflags,
   include_directories : include,

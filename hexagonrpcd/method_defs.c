@@ -1,11 +1,11 @@
 /*
  * FastRPC interface list for building method definitions
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -21,4 +21,7 @@
 
 #define HEXAGONRPC_BUILD_METHOD_DEFINITIONS 1
 
-#include "interfaces/chre_slpi.def"
+#include "interfaces/adsp_default_listener.def"
+#include "interfaces/apps_mem.def"
+#include "interfaces/apps_std.def"
+#include "interfaces/adsp_listener.def"

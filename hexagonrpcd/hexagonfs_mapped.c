@@ -1,11 +1,11 @@
 /*
  * HexagonFS mapped file/directory operations
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -32,6 +32,7 @@
 
 struct mapped_ctx {
 	int fd;
+	int flags;
 	DIR *dir;
 };
 
@@ -47,21 +48,47 @@ static void mapped_close(void *fd_data)
 	free(ctx);
 }
 
+static int mapped_open_path(const char *name, bool dir)
+{
+	int flags = O_RDWR;
+
+	if (dir)
+		flags |= O_DIRECTORY;
+
+	int fd = open(name, flags);
+	if (fd == -1 && (errno == EACCES || errno == EISDIR)) {
+		flags = (flags & ~O_ACCMODE) | O_RDONLY;
+		fd = open(name, flags);
+	}
+	return fd;
+}
+
+static int mapped_openat_path(int dir_fd, const char *segment, bool dir)
+{
+	int flags = O_RDWR | O_NOFOLLOW;
+
+	if (dir)
+		flags |= O_DIRECTORY;
+
+	int fd = openat(dir_fd, segment, flags);
+	if (fd == -1 && (errno == EACCES || errno == EROFS || errno == EISDIR)) {
+		flags = (flags & ~O_ACCMODE) | O_RDONLY;
+		fd = openat(dir_fd, segment, flags);
+	}
+	return fd;
+}
+
 static int mapped_from_dirent(const void *dirent_data, bool dir, void **fd_data)
 {
 	struct mapped_ctx *ctx;
 	const char *name = dirent_data;
-	int flags = O_RDONLY;
 	int ret;
 
 	ctx = malloc(sizeof(struct mapped_ctx));
 	if (ctx == NULL)
 		return -ENOMEM;
 
-	if (dir)
-		flags |= O_DIRECTORY;
-
-	ctx->fd = open(name, flags);
+	ctx->fd = mapped_open_path(name, dir);
 	if (ctx->fd == -1) {
 		ret = -errno;
 		goto err;
@@ -86,7 +113,6 @@ static int mapped_openat(struct hexagonfs_fd *dir,
 	struct mapped_ctx *dir_ctx = dir->data;
 	struct hexagonfs_fd *fd;
 	struct mapped_ctx *ctx;
-	int flags = O_RDONLY;
 	int ret;
 
 	ctx = malloc(sizeof(struct mapped_ctx));
@@ -99,10 +125,7 @@ static int mapped_openat(struct hexagonfs_fd *dir,
 		goto err;
 	}
 
-	if (expect_dir)
-		flags |= O_DIRECTORY;
-
-	ctx->fd = openat(dir_ctx->fd, segment, flags);
+	ctx->fd = mapped_openat_path(dir_ctx->fd, segment, expect_dir);
 	if (ctx->fd == -1) {
 		ret = -errno;
 		goto err_free_fd;
@@ -174,6 +197,30 @@ static int mapped_seek(struct hexagonfs_fd *fd, off_t off, int whence)
 
 	ret = lseek(ctx->fd, off, whence);
 	if (ret == -1)
+		return -errno;
+
+	return 0;
+}
+
+static ssize_t mapped_write(struct hexagonfs_fd *fd, size_t size, const void *ptr)
+{
+	struct mapped_ctx *ctx = fd->data;
+	ssize_t ret;
+
+	ret = write(ctx->fd, ptr, size);
+	if (ret < 0)
+		return -errno;
+
+	return ret;
+}
+
+static int mapped_truncate(struct hexagonfs_fd *fd, off_t length)
+{
+	struct mapped_ctx *ctx = fd->data;
+	int ret;
+
+	ret = ftruncate(ctx->fd, length);
+	if (ret)
 		return -errno;
 
 	return 0;
@@ -330,6 +377,8 @@ struct hexagonfs_file_ops hexagonfs_mapped_ops = {
 	.readdir = mapped_readdir,
 	.seek = mapped_seek,
 	.stat = mapped_stat,
+	.write = mapped_write,
+	.truncate = mapped_truncate,
 };
 
 struct hexagonfs_file_ops hexagonfs_mapped_or_empty_ops = {

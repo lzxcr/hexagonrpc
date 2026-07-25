@@ -1,11 +1,11 @@
 /*
  * FastRPC Example
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <libhexagonrpc/fastrpc.h>
 #include <libhexagonrpc/interfaces/remotectl.def>
+#include <libhexagonrpc/remotectl.h>
 #include <misc/fastrpc.h>
 #include <unistd.h>
 #include <signal.h>
@@ -43,71 +44,9 @@
 #include "localctl.h"
 #include "rpcd_builder.h"
 
-static int remotectl_open(int fd, char *name, struct fastrpc_context **ctx, void (*err_cb)(const char *err))
-{
-	uint32_t handle;
-	int32_t dlret;
-	char err[256];
-	int ret;
-
-	ret = fastrpc2(&remotectl_open_def, fd, REMOTECTL_HANDLE,
-		       strlen(name) + 1, name,
-		       &handle,
-		       &dlret,
-		       256, err);
-
-	if (ret == -1) {
-		err_cb(strerror(errno));
-		return ret;
-	}
-
-	if (dlret == -5) {
-		err_cb(err);
-		return dlret;
-	} else if (dlret) {
-		err_cb(aee_strerror[dlret]);
-		return dlret;
-	}
-
-	*ctx = fastrpc_create_context(fd, handle);
-
-	return ret;
-}
-
-static int remotectl_close(struct fastrpc_context *ctx, void (*err_cb)(const char *err))
-{
-	uint32_t dlret;
-	char err[256];
-	int ret;
-
-	ret = fastrpc2(&remotectl_close_def, ctx->fd, REMOTECTL_HANDLE,
-		       ctx->handle,
-		       &dlret,
-		       256, err);
-
-	if (ret == -1) {
-		err_cb(strerror(errno));
-		return ret;
-	}
-
-	if (dlret) {
-		err_cb(aee_strerror[dlret]);
-		return dlret;
-	}
-
-	fastrpc_destroy_context(ctx);
-
-	return ret;
-}
-
 static int adsp_default_listener_register(struct fastrpc_context *ctx)
 {
 	return fastrpc(&adsp_default_listener_register_def, ctx);
-}
-
-static void remotectl_err(const char *err)
-{
-	fprintf(stderr, "Could not remotectl: %s\n", err);
 }
 
 static int register_fastrpc_listener(int fd)
@@ -115,7 +54,7 @@ static int register_fastrpc_listener(int fd)
 	struct fastrpc_context *ctx;
 	int ret;
 
-	ret = remotectl_open(fd, "adsp_default_listener", &ctx, remotectl_err);
+	ret = remotectl_open(fd, "adsp_default_listener", &ctx);
 	if (ret)
 		return 1;
 
@@ -126,7 +65,7 @@ static int register_fastrpc_listener(int fd)
 	}
 
 err:
-	remotectl_close(ctx, remotectl_err);
+	remotectl_close(ctx);
 	return ret;
 }
 
@@ -261,7 +200,7 @@ static void *start_reverse_tunnel(int fd, const char *device_dir, const char *ds
 	if (ifaces == NULL)
 		return NULL;
 
-	root_dir = construct_root_dir(device_dir, dsp);
+	root_dir = construct_root_dir_with_prefix(device_dir, dsp);
 
 	/*
 	 * The apps_remotectl interface patiently waits for this function to

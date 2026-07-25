@@ -11,8 +11,8 @@ ConditionPathExists=/dev/fastrpc-adsp
 ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-adsp -d adsp
 Restart=always
 RestartSec=3
-User=fastrpc
-Group=fastrpc
+User=hexagonrpc
+Group=hexagonrpc
 
 [Install]
 WantedBy=multi-user.target

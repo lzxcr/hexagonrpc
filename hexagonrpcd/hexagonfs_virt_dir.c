@@ -1,62 +1,49 @@
 /*
  * HexagonFS virtual directory operations
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
- *
- * This file is part of sensh.
- *
- * Sensh is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  */
 
 #include <errno.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "hexagonfs.h"
 
-/*
- * This function searches for the relevant path segment in the path directory.
- * It is not optimized because it is dealing with small directories.
- */
+struct virt_dir_ctx {
+	const struct hexagonfs_dirent *const *dirlist;
+	char *root_path;
+};
+
 static const struct hexagonfs_dirent *walk_dir(const struct hexagonfs_dirent *const *dir,
 					 const char *segment)
 {
 	const struct hexagonfs_dirent *const *curr = dir;
-
 	while (*curr != NULL) {
 		if (!strcmp(segment, (*curr)->name))
 			break;
-
 		curr++;
 	}
-
 	return *curr;
 }
 
 static int virt_dir_from_dirent(const void *dirent_data, bool dir, void **fd_data)
 {
-	const struct hexagonfs_dirent *const **wrapper;
+	const struct virt_dir_dirent_data *dd = dirent_data;
+	struct virt_dir_ctx *ctx;
 
-	wrapper = malloc(sizeof(*wrapper));
-	if (wrapper == NULL)
+	ctx = malloc(sizeof(*ctx));
+	if (ctx == NULL)
 		return -ENOMEM;
 
-	*wrapper = dirent_data;
-	*fd_data = wrapper;
-
+	ctx->dirlist = dd->dirlist;
+	ctx->root_path = dd->root_path ? strdup(dd->root_path) : NULL;
+	*fd_data = ctx;
 	return 0;
 }
 
@@ -65,12 +52,12 @@ static int virt_dir_openat(struct hexagonfs_fd *dir,
 			   bool expect_dir,
 			   struct hexagonfs_fd **out)
 {
-	const struct hexagonfs_dirent *const **dirlist = dir->data;
+	struct virt_dir_ctx *dir_ctx = dir->data;
 	const struct hexagonfs_dirent *ent;
 	struct hexagonfs_fd *fd;
 	int ret;
 
-	ent = walk_dir(*dirlist, segment);
+	ent = walk_dir(dir_ctx->dirlist, segment);
 	if (ent == NULL)
 		return -ENOENT;
 
@@ -82,12 +69,23 @@ static int virt_dir_openat(struct hexagonfs_fd *dir,
 	fd->up = dir;
 	fd->ops = ent->ops;
 
-	ret = ent->ops->from_dirent(ent->u.ptr, expect_dir, &fd->data);
+	/*
+	 * If the child is also a virt_dir, inject root_path through
+	 * its dirent data by wrapping it.
+	 */
+	if (ent->ops == &hexagonfs_virt_dir_ops && dir_ctx->root_path) {
+		struct virt_dir_dirent_data sub_dd = {
+			.root_path = dir_ctx->root_path,
+			.dirlist = (const struct hexagonfs_dirent *const *)ent->u.dir,
+		};
+		ret = ent->ops->from_dirent(&sub_dd, expect_dir, &fd->data);
+	} else {
+		ret = ent->ops->from_dirent(ent->u.ptr, expect_dir, &fd->data);
+	}
 	if (ret)
 		goto err;
 
 	*out = fd;
-
 	return 0;
 
 err:
@@ -97,31 +95,52 @@ err:
 
 static void virt_dir_close(void *fd_data)
 {
-	free(fd_data);
+	struct virt_dir_ctx *ctx = fd_data;
+	free(ctx->root_path);
+	free(ctx);
 }
 
 static int virt_dir_stat(struct hexagonfs_fd *fd, struct stat *stats)
 {
-	stats->st_size = 0;
-
-	stats->st_dev = 0;
-	stats->st_rdev = 0;
-
-	stats->st_ino = 0;
-	stats->st_nlink = 0;
-
-	stats->st_mode = S_IRUSR | S_IXUSR
-		       | S_IRGRP | S_IXGRP
-		       | S_IROTH | S_IXOTH;
-
-	stats->st_atim.tv_sec = 0;
-	stats->st_atim.tv_nsec = 0;
-	stats->st_ctim.tv_sec = 0;
-	stats->st_ctim.tv_nsec = 0;
-	stats->st_mtim.tv_sec = 0;
-	stats->st_mtim.tv_nsec = 0;
-
+	memset(stats, 0, sizeof(*stats));
+	stats->st_mode = S_IRUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
 	return 0;
+}
+
+static int make_phys(struct virt_dir_ctx *ctx, const char *name, char **out)
+{
+	if (!ctx->root_path)
+		return -ENOSYS;
+	size_t len = strlen(ctx->root_path) + 1 + strlen(name) + 1;
+	*out = malloc(len);
+	if (!*out)
+		return -ENOMEM;
+	sprintf(*out, "%s/%s", ctx->root_path, name);
+	return 0;
+}
+
+static int virt_dir_mkdir(struct hexagonfs_fd *dir, const char *name, mode_t mode)
+{
+	char *p; int r = make_phys(dir->data, name, &p);
+	if (r) return r;
+	r = mkdir(p, mode) ? -errno : 0;
+	free(p); return r;
+}
+
+static int virt_dir_rmdir(struct hexagonfs_fd *dir, const char *name)
+{
+	char *p; int r = make_phys(dir->data, name, &p);
+	if (r) return r;
+	r = rmdir(p) ? -errno : 0;
+	free(p); return r;
+}
+
+static int virt_dir_unlink(struct hexagonfs_fd *dir, const char *name)
+{
+	char *p; int r = make_phys(dir->data, name, &p);
+	if (r) return r;
+	r = unlink(p) ? -errno : 0;
+	free(p); return r;
 }
 
 struct hexagonfs_file_ops hexagonfs_virt_dir_ops = {
@@ -129,4 +148,7 @@ struct hexagonfs_file_ops hexagonfs_virt_dir_ops = {
 	.from_dirent = virt_dir_from_dirent,
 	.openat = virt_dir_openat,
 	.stat = virt_dir_stat,
+	.mkdir = virt_dir_mkdir,
+	.rmdir = virt_dir_rmdir,
+	.unlink = virt_dir_unlink,
 };

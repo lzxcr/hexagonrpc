@@ -1,11 +1,11 @@
 /*
  * FastRPC operating system interface implementation
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -20,6 +20,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -37,6 +38,8 @@ struct apps_std_ctx {
 	int adsp_avs_cfg_dirfd;
 	int adsp_library_dirfd;
 	struct hexagonfs_fd *fds[HEXAGONFS_MAX_FD];
+	bool fd_eof[HEXAGONFS_MAX_FD];
+	bool fd_err[HEXAGONFS_MAX_FD];
 };
 
 static const int apps_std_whence_table[] = {
@@ -44,6 +47,43 @@ static const int apps_std_whence_table[] = {
 	SEEK_CUR,
 	SEEK_END,
 };
+
+static uint32_t apps_std_fopen(void *data,
+			       const struct fastrpc_io_buffer *inbufs,
+			       struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	uint32_t *out = outbufs[0].p;
+	int fd;
+
+	/* inbufs[0] = prim: [name_len, mode_len]
+	 * inbufs[1] = name (NUL-terminated)
+	 * inbufs[2] = mode (NUL-terminated) */
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
+	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	/* Try searching from the library path first, then root */
+	fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
+			      ctx->adsp_library_dirfd, inbufs[1].p);
+	if (fd < 0) {
+		fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
+				      ctx->rootfd, inbufs[1].p);
+	}
+	if (fd < 0) {
+		fprintf(stderr, "Could not open %s: %s\n",
+			(const char *)inbufs[1].p, strerror(-fd));
+		return AEE_EFAILED;
+	}
+
+#ifdef HEXAGONRPC_VERBOSE
+	printf("fopen(%s) -> %d\n", (const char *)inbufs[1].p, fd);
+#endif
+
+	*out = fd;
+	return 0;
+}
 
 /*
  * This is a placeholder function used to complete any I/O operations.
@@ -71,16 +111,22 @@ static uint32_t apps_std_fclose(void *data,
 {
 	struct apps_std_ctx *ctx = data;
 	const uint32_t *first_in = inbufs[0].p;
+	uint32_t fd = *first_in;
 	int ret;
 
-	ret = hexagonfs_close(ctx->fds, *first_in);
+	if (fd < HEXAGONFS_MAX_FD) {
+		ctx->fd_eof[fd] = false;
+		ctx->fd_err[fd] = false;
+	}
+
+	ret = hexagonfs_close(ctx->fds, fd);
 	if (ret) {
 		fprintf(stderr, "Could not close: %s\n", strerror(-ret));
 		return AEE_EFAILED;
 	}
 
 #ifdef HEXAGONRPC_VERBOSE
-	printf("close(%u)\n", *first_in);
+	printf("close(%u)\n", fd);
 #endif
 
 	return 0;
@@ -99,23 +145,33 @@ static uint32_t apps_std_fread(void *data,
 		uint32_t written;
 		uint32_t is_eof;
 	} *first_out = outbufs[0].p;
+	uint32_t fd = first_in->fd;
 	ssize_t ret;
 
-	ret = hexagonfs_read(ctx->fds, first_in->fd,
+	ret = hexagonfs_read(ctx->fds, fd,
 			     first_in->buf_size, outbufs[1].p);
 	if (ret < 0) {
 		fprintf(stderr, "Could not read file: %s\n", strerror(-ret));
+		ctx->fd_err[fd] = true;
 		return AEE_EFAILED;
 	}
 
 #ifdef HEXAGONRPC_VERBOSE
-	printf("read(%u, %u) -> %ld\n", first_in->fd,
+	printf("read(%u, %u) -> %ld\n", fd,
 					first_in->buf_size,
 					ret);
 #endif
 
+	if (ret < (ssize_t)first_in->buf_size) {
+		ctx->fd_eof[fd] = true;
+	} else {
+		/* If we read exactly buf_size, we might-or-might-not be at EOF.
+		 * Reset the cached flag; a subsequent read will tell us. */
+		ctx->fd_eof[fd] = false;
+	}
+
 	first_out->written = ret;
-	first_out->is_eof = first_out->written < first_in->buf_size;
+	first_out->is_eof = ctx->fd_eof[fd];
 
 	return 0;
 }
@@ -156,7 +212,6 @@ static uint32_t apps_std_fopen_with_env(void *data,
 {
 	struct apps_std_ctx *ctx = data;
 	uint32_t *out = outbufs[0].p;
-	char rw_mode;
 	int dirfd, fd;
 
 	// The name and environment variable must also be NULL-terminated
@@ -164,13 +219,6 @@ static uint32_t apps_std_fopen_with_env(void *data,
 	 || ((const char *) inbufs[3].p)[inbufs[3].s - 1] != 0
 	 || ((const char *) inbufs[4].p)[inbufs[4].s - 1] != 0)
 		return AEE_EBADPARM;
-
-	rw_mode = ((const char *) inbufs[4].p)[0];
-	if (rw_mode == 'w' || rw_mode == 'a') {
-		fprintf(stderr, "Tried to open %s for writing\n",
-				(const char *) inbufs[3].p);
-		return AEE_EUNSUPPORTED;
-	}
 
 	if (!strcmp(inbufs[1].p, "ADSP_LIBRARY_PATH")) {
 		dirfd = ctx->adsp_library_dirfd;
@@ -192,18 +240,630 @@ static uint32_t apps_std_fopen_with_env(void *data,
 	if (fd < 0) {
 		fprintf(stderr, "Could not open %s: %s\n",
 				(const char *) inbufs[3].p,
-				strerror(errno));
+				strerror(-fd));
 		return AEE_EFAILED;
 	}
 
 #ifdef HEXAGONRPC_VERBOSE
-	printf("openat($%s, %s, %c) -> %d\n", (const char *) inbufs[1].p,
+	printf("openat($%s, %s) -> %d\n", (const char *) inbufs[1].p,
 					      (const char *) inbufs[3].p,
-					      rw_mode,
 					      fd);
 #endif
 
 	*out = fd;
+
+	return 0;
+}
+
+static uint32_t apps_std_flen(void *data,
+			      const struct fastrpc_io_buffer *inbufs,
+			      struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const uint32_t *first_in = inbufs[0].p;
+	uint64_t *len = outbufs[0].p;
+	struct stat st;
+	int ret;
+
+	ret = hexagonfs_fstat(ctx->fds, *first_in, &st);
+	if (ret) {
+		fprintf(stderr, "Could not flen fd %u: %s\n",
+			*first_in, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+	*len = st.st_size;
+
+#ifdef HEXAGONRPC_VERBOSE
+	printf("flen(%u) -> %lu\n", *first_in, *len);
+#endif
+
+	return 0;
+}
+
+static uint32_t apps_std_ftell(void *data,
+			       const struct fastrpc_io_buffer *inbufs,
+			       struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const uint32_t *first_in = inbufs[0].p;
+	uint32_t *pos = outbufs[0].p;
+	off_t ret;
+
+	ret = hexagonfs_lseek(ctx->fds, *first_in, 0, SEEK_CUR);
+	if (ret < 0) {
+		fprintf(stderr, "Could not ftell fd %u: %s\n",
+			*first_in, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+	*pos = ret;
+
+#ifdef HEXAGONRPC_VERBOSE
+	printf("ftell(%u) -> %u\n", *first_in, *pos);
+#endif
+
+	return 0;
+}
+
+static uint32_t apps_std_rewind(void *data,
+				const struct fastrpc_io_buffer *inbufs,
+				struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const uint32_t *first_in = inbufs[0].p;
+	int ret;
+
+	ret = hexagonfs_lseek(ctx->fds, *first_in, 0, SEEK_SET);
+	if (ret) {
+		fprintf(stderr, "Could not rewind fd %u: %s\n",
+			*first_in, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+	ctx->fd_eof[*first_in] = false;
+	ctx->fd_err[*first_in] = false;
+
+#ifdef HEXAGONRPC_VERBOSE
+	printf("rewind(%u)\n", *first_in);
+#endif
+
+	return 0;
+}
+
+static uint32_t apps_std_feof(void *data,
+			      const struct fastrpc_io_buffer *inbufs,
+			      struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const uint32_t *first_in = inbufs[0].p;
+	uint32_t *b_eof = outbufs[0].p;
+
+	*b_eof = ctx->fd_eof[*first_in] ? 1 : 0;
+
+	return 0;
+}
+
+static uint32_t apps_std_ferror(void *data,
+				const struct fastrpc_io_buffer *inbufs,
+				struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const uint32_t *first_in = inbufs[0].p;
+	uint32_t *err = outbufs[0].p;
+
+	*err = ctx->fd_err[*first_in] ? 1 : 0;
+
+	return 0;
+}
+
+static uint32_t apps_std_clearerr(void *data,
+				  const struct fastrpc_io_buffer *inbufs,
+				  struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const uint32_t *first_in = inbufs[0].p;
+
+	ctx->fd_eof[*first_in] = false;
+	ctx->fd_err[*first_in] = false;
+
+	return 0;
+}
+
+static uint32_t apps_std_print_string(void *data,
+				      const struct fastrpc_io_buffer *inbufs,
+				      struct fastrpc_io_buffer *outbufs)
+{
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	printf("DSP: %s\n", (const char *)inbufs[1].p);
+
+	return 0;
+}
+
+static uint32_t apps_std_fileExists(void *data,
+				    const struct fastrpc_io_buffer *inbufs,
+				    struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	uint32_t *exists = outbufs[0].p;
+	struct stat st;
+	int fd, ret;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
+			      ctx->adsp_library_dirfd, inbufs[1].p);
+	if (fd < 0) {
+		*exists = 0;
+		return 0;
+	}
+
+	ret = hexagonfs_fstat(ctx->fds, fd, &st);
+	hexagonfs_close(ctx->fds, fd);
+
+	*exists = (ret == 0) ? 1 : 0;
+
+	return 0;
+}
+
+static uint32_t apps_std_fwrite(void *data,
+				const struct fastrpc_io_buffer *inbufs,
+				struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const struct {
+		uint32_t fd;
+		uint32_t buf_len;
+	} *first_in = inbufs[0].p;
+	struct {
+		uint32_t written;
+		uint32_t is_eof;
+	} *first_out = outbufs[0].p;
+	ssize_t ret;
+
+	ret = hexagonfs_write(ctx->fds, first_in->fd,
+			      first_in->buf_len, inbufs[1].p);
+	if (ret < 0) {
+		ctx->fd_err[first_in->fd] = true;
+		fprintf(stderr, "Could not write to fd %u: %s\n",
+			first_in->fd, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+#ifdef HEXAGONRPC_VERBOSE
+	printf("write(%u, %u) -> %ld\n", first_in->fd,
+					first_in->buf_len, ret);
+#endif
+
+	first_out->written = ret;
+	first_out->is_eof = 0;
+
+	return 0;
+}
+
+static uint32_t apps_std_fremove(void *data,
+				 const struct fastrpc_io_buffer *inbufs,
+				 struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	int ret;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	ret = hexagonfs_unlink(ctx->fds, ctx->rootfd, inbufs[1].p);
+	if (ret) {
+		fprintf(stderr, "Could not remove %s: %s\n",
+			(const char *)inbufs[1].p, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+	return 0;
+}
+
+static uint32_t apps_std_mkdir(void *data,
+			       const struct fastrpc_io_buffer *inbufs,
+			       struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const struct {
+		uint32_t mode;
+		uint32_t name_len;
+	} *first_in = inbufs[0].p;
+	int ret;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	ret = hexagonfs_mkdir(ctx->fds, ctx->rootfd,
+			      inbufs[1].p, first_in->mode);
+	if (ret) {
+		fprintf(stderr, "Could not mkdir %s: %s\n",
+			(const char *)inbufs[1].p, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+	return 0;
+}
+
+static uint32_t apps_std_rmdir(void *data,
+			       const struct fastrpc_io_buffer *inbufs,
+			       struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	int ret = hexagonfs_rmdir(ctx->fds, ctx->rootfd, inbufs[1].p);
+	if (ret) {
+		fprintf(stderr, "Could not rmdir %s: %s\n",
+			(const char *)inbufs[1].p, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+	return 0;
+}
+
+static uint32_t apps_std_ftrunc(void *data,
+				const struct fastrpc_io_buffer *inbufs,
+				struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const struct {
+		uint32_t fd;
+		uint32_t offset;
+	} *first_in = inbufs[0].p;
+	int ret;
+
+	ret = hexagonfs_ftruncate(ctx->fds, first_in->fd, first_in->offset);
+	if (ret) {
+		fprintf(stderr, "Could not ftrunc fd %u: %s\n",
+			first_in->fd, strerror(-ret));
+		return AEE_EFAILED;
+	}
+
+	return 0;
+}
+
+static uint32_t apps_std_fsync(void *data,
+			       const struct fastrpc_io_buffer *inbufs,
+			       struct fastrpc_io_buffer *outbufs)
+{
+	/* POSIX write-through semantics: data is already on its way.
+	 * A no-op is safe here. */
+	return 0;
+}
+
+static uint32_t apps_std_fdopen_decrypt(void *data,
+					const struct fastrpc_io_buffer *inbufs,
+					struct fastrpc_io_buffer *outbufs)
+{
+	/* No decryption needed on Linux; return the same fd */
+	const uint32_t *first_in = inbufs[0].p;
+	uint32_t *psout = outbufs[0].p;
+
+	*psout = *first_in;
+	return 0;
+}
+
+static uint32_t apps_std_frename(void *data,
+				 const struct fastrpc_io_buffer *inbufs,
+				 struct fastrpc_io_buffer *outbufs)
+{
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
+	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	if (rename((const char *)inbufs[1].p, (const char *)inbufs[2].p))
+		return AEE_EFAILED;
+
+	return 0;
+}
+
+static uint32_t apps_std_fopen_fd(void *data,
+				  const struct fastrpc_io_buffer *inbufs,
+				  struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	/* inbufs[0] = prim: [name_len, mode_len]
+	 * inbufs[1] = name, inbufs[2] = mode
+	 * outbufs[0] = prim: [fd, len] */
+	uint32_t *out = outbufs[0].p;
+	struct stat st;
+	int fd;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
+	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
+			      ctx->adsp_library_dirfd, inbufs[1].p);
+	if (fd < 0) {
+		fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
+				      ctx->rootfd, inbufs[1].p);
+	}
+	if (fd < 0) {
+		fprintf(stderr, "Could not fopen_fd %s: %s\n",
+			(const char *)inbufs[1].p, strerror(-fd));
+		return AEE_EFAILED;
+	}
+
+	if (hexagonfs_fstat(ctx->fds, fd, &st)) {
+		hexagonfs_close(ctx->fds, fd);
+		return AEE_EFAILED;
+	}
+
+	out[0] = fd;
+	out[1] = (uint32_t)st.st_size;
+
+	return 0;
+}
+
+static uint32_t apps_std_fclose_fd(void *data,
+				   const struct fastrpc_io_buffer *inbufs,
+				   struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const uint32_t *first_in = inbufs[0].p;
+
+	return hexagonfs_close(ctx->fds, *first_in) ? AEE_EFAILED : 0;
+}
+
+static uint32_t apps_std_fopen_with_env_fd(void *data,
+					   const struct fastrpc_io_buffer *inbufs,
+					   struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	/* inbufs[0] = prim: [envvar_len, delim_len, name_len, mode_len]
+	 * inbufs[1] = envvar, inbufs[2] = delim
+	 * inbufs[3] = name, inbufs[4] = mode
+	 * outbufs[0] = prim: [fd, len] */
+	uint32_t *out = outbufs[0].p;
+	struct stat st;
+	int dirfd, fd;
+
+	if (((const char *)inbufs[3].p)[inbufs[3].s - 1] != 0
+	 || ((const char *)inbufs[4].p)[inbufs[4].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	if (!strcmp(inbufs[1].p, "ADSP_LIBRARY_PATH"))
+		dirfd = ctx->adsp_library_dirfd;
+	else
+		return AEE_EUNSUPPORTED;
+
+	if (dirfd < 0)
+		return AEE_EFAILED;
+
+	fd = hexagonfs_openat(ctx->fds, ctx->rootfd, dirfd, inbufs[3].p);
+	if (fd < 0)
+		return AEE_EFAILED;
+
+	if (hexagonfs_fstat(ctx->fds, fd, &st)) {
+		hexagonfs_close(ctx->fds, fd);
+		return AEE_EFAILED;
+	}
+
+	out[0] = fd;
+	out[1] = (uint32_t)st.st_size;
+
+	return 0;
+}
+
+static uint32_t apps_std_get_search_paths_with_env(void *data,
+						   const struct fastrpc_io_buffer *inbufs,
+						   struct fastrpc_io_buffer *outbufs)
+{
+	/*
+	 * Returns an empty search path list (numPaths=0, maxPathLen=0).
+	 *
+	 * Full slim-type sequence encoding is not yet implemented.
+	 * HexagonFS transparently remaps Android paths to Linux paths,
+	 * so the DSP does not need to discover search paths at runtime
+	 * — fopen_with_env already resolves via the configured directories.
+	 *
+	 * Wire format: prim outbuf = [numPaths:uint32, maxPathLen:uint16 + 2B pad]
+	 */
+	uint32_t *prim_out = outbufs[0].p;
+	prim_out[0] = 0; /* numPaths */
+	prim_out[1] = 0; /* maxPathLen (uint16) */
+	return 0;
+}
+
+static uint32_t apps_std_fgets(void *data,
+			       const struct fastrpc_io_buffer *inbufs,
+			       struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const struct {
+		uint32_t fd;
+		uint32_t buf_size;
+	} *first_in = inbufs[0].p;
+	uint32_t *b_eof = outbufs[0].p;
+	char *buf = outbufs[1].p;
+	ssize_t total = 0;
+	int ret;
+	char c;
+
+	/* Read up to buf_size bytes, stop at newline or EOF */
+	while (total < (ssize_t)first_in->buf_size - 1) {
+		ret = hexagonfs_read(ctx->fds, first_in->fd, 1, &c);
+		if (ret < 0) {
+			ctx->fd_err[first_in->fd] = true;
+			return AEE_EFAILED;
+		}
+		if (ret == 0) {
+			ctx->fd_eof[first_in->fd] = true;
+			break;
+		}
+		buf[total++] = c;
+		if (c == '\n')
+			break;
+	}
+
+	buf[total] = '\0';
+	*b_eof = ctx->fd_eof[first_in->fd] ? 1 : 0;
+
+#ifdef HEXAGONRPC_VERBOSE
+	printf("fgets(%u, %u) -> %ld \"%s\"\n",
+	       first_in->fd, first_in->buf_size, (long)total, buf);
+#endif
+
+	return 0;
+}
+
+static uint32_t apps_std_freopen(void *data,
+				 const struct fastrpc_io_buffer *inbufs,
+				 struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const struct {
+		uint32_t sin;
+		uint32_t name_len;
+		uint32_t mode_len;
+	} *first_in = inbufs[0].p;
+	uint32_t *psout = outbufs[0].p;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
+	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	/* Close old fd, open new one */
+	hexagonfs_close(ctx->fds, first_in->sin);
+
+	int fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
+				  ctx->adsp_library_dirfd, inbufs[1].p);
+	if (fd < 0) {
+		fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
+				      ctx->rootfd, inbufs[1].p);
+	}
+	if (fd < 0)
+		return AEE_EFAILED;
+
+	*psout = fd;
+	return 0;
+}
+
+static uint32_t apps_std_fgetpos(void *data,
+				 const struct fastrpc_io_buffer *inbufs,
+				 struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const struct {
+		uint32_t fd;
+		uint32_t pos_max;
+	} *first_in = inbufs[0].p;
+	uint32_t *pos_len_req = outbufs[0].p;
+	off_t pos;
+
+	pos = hexagonfs_lseek(ctx->fds, first_in->fd, 0, SEEK_CUR);
+	if (pos < 0)
+		return AEE_EFAILED;
+
+	/* Store the position as fpos_t in the output buffer */
+	*pos_len_req = sizeof(off_t);
+	if (*pos_len_req > first_in->pos_max)
+		*pos_len_req = first_in->pos_max;
+
+	if (*pos_len_req > outbufs[1].s)
+		*pos_len_req = outbufs[1].s;
+
+	memcpy(outbufs[1].p, &pos, *pos_len_req);
+
+	return 0;
+}
+
+static uint32_t apps_std_fsetpos(void *data,
+				 const struct fastrpc_io_buffer *inbufs,
+				 struct fastrpc_io_buffer *outbufs)
+{
+	struct apps_std_ctx *ctx = data;
+	const struct {
+		uint32_t fd;
+		uint32_t pos_len;
+	} *first_in = inbufs[0].p;
+	off_t pos = 0;
+
+	if (first_in->pos_len > sizeof(pos))
+		return AEE_EBADPARM;
+
+	memcpy(&pos, inbufs[1].p, first_in->pos_len);
+
+	int ret = hexagonfs_lseek(ctx->fds, first_in->fd, pos, SEEK_SET);
+	if (ret)
+		return AEE_EFAILED;
+
+	return 0;
+}
+
+static uint32_t apps_std_getenv(void *data,
+				const struct fastrpc_io_buffer *inbufs,
+				struct fastrpc_io_buffer *outbufs)
+{
+	/* inbufs[0] = prim: [name_len, val_max_size]
+	 * inbufs[1] = name (NUL-terminated)
+	 * outbufs[0] = prim: [val_len_req]
+	 * outbufs[1] = val data */
+	const struct {
+		uint32_t name_len;
+		uint32_t val_size;
+	} *first_in = inbufs[0].p;
+	const char *name = inbufs[1].p;
+	uint32_t *val_len_req = outbufs[0].p;
+	char *val = outbufs[1].p;
+	const char *env_val;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	env_val = getenv(name);
+	if (env_val == NULL) {
+		*val_len_req = 0;
+		return 0;
+	}
+
+	*val_len_req = strlen(env_val) + 1;
+	snprintf(val, first_in->val_size, "%s", env_val);
+
+	return 0;
+}
+
+static uint32_t apps_std_setenv(void *data,
+				const struct fastrpc_io_buffer *inbufs,
+				struct fastrpc_io_buffer *outbufs)
+{
+	/* inbufs[0] = prim: [override, name_len, val_len]
+	 * inbufs[1] = name (NUL-terminated)
+	 * inbufs[2] = val (NUL-terminated) */
+	const struct {
+		uint32_t override;
+		uint32_t name_len;
+		uint32_t val_len;
+	} *first_in = inbufs[0].p;
+	const char *name = inbufs[1].p;
+	const char *val = inbufs[2].p;
+
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
+	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	if (setenv(name, val, first_in->override))
+		return AEE_EFAILED;
+
+	return 0;
+}
+
+static uint32_t apps_std_unsetenv(void *data,
+				  const struct fastrpc_io_buffer *inbufs,
+				  struct fastrpc_io_buffer *outbufs)
+{
+	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	unsetenv((const char *)inbufs[1].p);
 
 	return 0;
 }
@@ -345,7 +1005,7 @@ static uint32_t apps_std_stat(void *data,
 	first_out->atimensec = (int64_t) stats.st_atim.tv_nsec;
 	first_out->mtime = (int64_t) stats.st_mtim.tv_sec;
 	first_out->mtimensec = (int64_t) stats.st_mtim.tv_nsec;
-	first_out->ctime = (int64_t) stats.st_ctim.tv_nsec;
+	first_out->ctime = (int64_t) stats.st_ctim.tv_sec;
 	first_out->ctimensec = (int64_t) stats.st_ctim.tv_nsec;
 
 	return 0;
@@ -406,8 +1066,14 @@ void fastrpc_apps_std_deinit(struct fastrpc_interface *iface)
 }
 
 static const struct fastrpc_function_impl apps_std_procs[] = {
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
+	{
+		.def = &apps_std_fopen_def,
+		.impl = apps_std_fopen,
+	},
+	{
+		.def = &apps_std_freopen_def,
+		.impl = apps_std_freopen,
+	},
 	{
 		.def = &apps_std_fflush_def,
 		.impl = apps_std_fflush,
@@ -420,33 +1086,90 @@ static const struct fastrpc_function_impl apps_std_procs[] = {
 		.def = &apps_std_fread_def,
 		.impl = apps_std_fread,
 	},
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
+	{
+		.def = &apps_std_fwrite_def,
+		.impl = apps_std_fwrite,
+	},
+	{
+		.def = &apps_std_fgetpos_def,
+		.impl = apps_std_fgetpos,
+	},
+	{
+		.def = &apps_std_fsetpos_def,
+		.impl = apps_std_fsetpos,
+	},
+	{
+		.def = &apps_std_ftell_def,
+		.impl = apps_std_ftell,
+	},
 	{
 		.def = &apps_std_fseek_def,
 		.impl = apps_std_fseek,
 	},
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
+	{
+		.def = &apps_std_flen_def,
+		.impl = apps_std_flen,
+	},
+	{
+		.def = &apps_std_rewind_def,
+		.impl = apps_std_rewind,
+	},
+	{
+		.def = &apps_std_feof_def,
+		.impl = apps_std_feof,
+	},
+	{
+		.def = &apps_std_ferror_def,
+		.impl = apps_std_ferror,
+	},
+	{
+		.def = &apps_std_clearerr_def,
+		.impl = apps_std_clearerr,
+	},
+	{
+		.def = &apps_std_print_string_def,
+		.impl = apps_std_print_string,
+	},
+	{
+		.def = &apps_std_getenv_def,
+		.impl = apps_std_getenv,
+	},
+	{
+		.def = &apps_std_setenv_def,
+		.impl = apps_std_setenv,
+	},
+	{
+		.def = &apps_std_unsetenv_def,
+		.impl = apps_std_unsetenv,
+	},
 	{
 		.def = &apps_std_fopen_with_env_def,
 		.impl = apps_std_fopen_with_env,
 	},
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
+	{
+		.def = &apps_std_fgets_def,
+		.impl = apps_std_fgets,
+	},
+	{
+		.def = &apps_std_get_search_paths_with_env_def,
+		.impl = apps_std_get_search_paths_with_env,
+	},
+	{
+		.def = &apps_std_fileExists_def,
+		.impl = apps_std_fileExists,
+	},
+	{
+		.def = &apps_std_fsync_def,
+		.impl = apps_std_fsync,
+	},
+	{
+		.def = &apps_std_fremove_def,
+		.impl = apps_std_fremove,
+	},
+	{
+		.def = &apps_std_fdopen_decrypt_def,
+		.impl = apps_std_fdopen_decrypt,
+	},
 	{
 		.def = &apps_std_opendir_def,
 		.impl = apps_std_opendir,
@@ -459,16 +1182,42 @@ static const struct fastrpc_function_impl apps_std_procs[] = {
 		.def = &apps_std_readdir_def,
 		.impl = apps_std_readdir,
 	},
-	{ .def = NULL, .impl = NULL, },
-	{ .def = NULL, .impl = NULL, },
+	{
+		.def = &apps_std_mkdir_def,
+		.impl = apps_std_mkdir,
+	},
+	{
+		.def = &apps_std_rmdir_def,
+		.impl = apps_std_rmdir,
+	},
 	{
 		.def = &apps_std_stat_def,
 		.impl = apps_std_stat,
+	},
+	{
+		.def = &apps_std_ftrunc_def,
+		.impl = apps_std_ftrunc,
+	},
+	{
+		.def = &apps_std_frename_def,
+		.impl = apps_std_frename,
+	},
+	{
+		.def = &apps_std_fopen_fd_def,
+		.impl = apps_std_fopen_fd,
+	},
+	{
+		.def = &apps_std_fclose_fd_def,
+		.impl = apps_std_fclose_fd,
+	},
+	{
+		.def = &apps_std_fopen_with_env_fd_def,
+		.impl = apps_std_fopen_with_env_fd,
 	},
 };
 
 const struct fastrpc_interface apps_std_interface = {
 	.name = "apps_std",
-	.n_procs = 32,
+	.n_procs = 37,
 	.procs = apps_std_procs,
 };

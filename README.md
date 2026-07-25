@@ -1,158 +1,74 @@
-This directory contains a FastRPC ioctl wrapper and a reverse tunnel.
+# HexagonRPC v0.5.0
 
-FastRPC is used to communicate with the Context Hub Runtime Environment, a
-program on the DSP that manages sensors, and to serve files to remote
-processors.
+FastRPC ioctl 包装库 + 反向隧道守护进程 + HexagonFS 虚拟文件系统。
 
-# Wrapper function
+用于与 Qualcomm DSP(ADSP/SDSP/CDSP)通信,为 CHRE 等 DSP 程序提供文件服务,
+支持主线 Linux 上的 Android 固件路径透明重定向。
 
-The wrapper function is designed so that the ioctl arguments do not need to be
-constructed for each remote method. Instead, it accepts an open file descriptor,
-handle, method definition, and arguments to the remote method using `va_args`.
-This makes it relatively easy to add remote methods without the use of the QAIC
-interface compiler or a free software alternative.
+## 架构
 
-## Installation
+```
+┌─ libhexagonrpc ── 共享库 (fastrpc/fastrpc2/remotectl 包装)
+├─ hexagonrpcd    ── 守护进程 (反向隧道 + HexagonFS)
+├─ chrecd         ── CHRE 客户端
+└─ HexagonFS      ── 虚拟目录树: Android 路径 → Linux 物理路径
+```
 
-You can build and install this project using meson:
+## 构建
 
-    ~/sensh/fastrpc $ meson setup build
-    ~/sensh/fastrpc $ ninja -C build
-    ~/sensh/fastrpc # ninja -C build install
+```bash
+meson setup build
+ninja -C build
+ninja -C build install  # 安装到 /usr/local/
+```
 
-## Usage
+## 运行
 
-Making already-defined method calls is relatively straightforward, depending on
-the remote method that you're calling. You just need the function definition, an
-open file descriptor, the handle, and the arguments for it.
+```bash
+hexagonrpcd -f /dev/fastrpc-adsp -R /usr/share/qcom/sdm845/SHIFT/axolotl
+```
 
-    uint32_t prev_ctx, prev_result, nested_outbufs_len;
-    uint32_t ctx, nested_handle, nested_sc, nested_inbufs_len;
-    uint32_t nested_inbufs_size;
-    const void *nested_outbufs;
-    void *nested_inbufs;
-    int fd;
+参数:
+- `-f DEVICE` — FastRPC 设备节点 (必需)
+- `-R DIR` — HexagonFS 根目录 (默认 /usr/share/qcom/)
+- `-d DSP` — DSP 名称 (默认 adsp)
+- `-s` — sensors PD 模式
+- `-c SHELL` — 创建自定义 PD 加载 ELF
+- `-p PROGRAM` — 启动子客户端 (共享 FD)
 
-    ret = fastrpc2(&adsp_listener_next2_def, fd, ADSP_LISTENER_HANDLE,
-    	       prev_ctx,
-    	       prev_result,
-    	       nested_outbufs_len, nested_outbufs,
-    	       &ctx,
-    	       &nested_handle,
-    	       &nested_sc,
-    	       &nested_inbufs_len,
-    	       nested_inbufs_size, nested_inbufs);
+## 方法覆盖
 
-All inputs are specified before all outputs. Words in the first (called "prim",
-or primary in QAIC-generated code) input and output buffers go in the form of
-`uint32_t` arguments. Each buffer is accepted as a `uint32_t` length and a
-pointer.
+| 接口 | 方法 | 覆盖率 |
+|------|------|--------|
+| apps_std | fopen/close/read/write/seek/stat/opendir 等 | **37/37** ✅ |
+| apps_mem | mmap/munmap/share_map/dma_handle 等 | **8/8** ✅ |
+| remotectl | open/close | **2/2** ✅ |
+| adsp_listener | init2/next2 | **2/2** ✅ |
+| chre_slpi | start_thread/wait_on_thread_exit | **2/2** ✅ |
 
-### Creating function definitions
+详细文档见 `docs/`。
 
-Assuming you already have knowledge about the remote method to call, you must
-first write a function definition for it. A function definition is a struct with
-information on its method ID and the arguments it accepts.
+## HexagonFS 路径映射
 
-First, the method ID is taken from the first argument of the
-`REMOTE_SCALARS_MAKE()` macro or the second argument of the
-`REMOTE_SCALARS_MAKEX()` macro
-(defined [here](https://android.googlesource.com/platform/external/fastrpc/+/d6d6e3bba244e40e6043bd687f4cacf090a767b5/inc/remote.h#80)).
+| DSP 虚拟路径 | 物理路径 |
+|-------------|---------|
+| `/vendor/etc/acdbdata/` | `{root}/acdb/` |
+| `/vendor/dsp/{dsp}/` | `{root}/dsp/{dsp}/` |
+| `/vendor/etc/sensors/config/` | `{root}/sensors/config/` |
+| `/persist/sensors/registry/` | `{root}/sensors/registry/` |
+| `/vendor/etc/sensors/sns_reg_config` | `{root}/sensors/sns_reg.conf` |
+| `/sys/devices/soc0/` | `{root}/socinfo/` |
+| `/usr/lib/qcom/{dsp}/` | `{root}/dsp/{dsp}/` |
 
-Example:
+支持硬链接: `/vendor/` ↔ `/system/vendor/`, `/persist/` ↔ `/mnt/vendor/persist/`
 
-    REMOTE_SCALARS_MAKE(4, 2, 2)
+## 测试
 
-has the method 4.
+```bash
+meson test -C build
+# 输出: iobuffer OK, hexagonfs OK, dsp-simulation OK
+```
 
-Next, information on how many arguments it takes must be specified. There are
-four types of arguments:
+## 许可
 
-- 32-bit input words in the first input buffer, excluding lengths for the input
-  and output buffers
-- 32-bit output words in the first output buffer
-- input buffers, excluding the first
-- output buffers, excluding the first
-
-To get the size of the first input and output buffers, a dump must be consulted,
-or the prim argument of generated C files:
-
-    invoking via fastrpc, handle 3, method 4, 2 inbufs, 2 outbufs, 0 inhandles, 0 outhandles
-    fastrpc argument 00000000FFFFFFFF0000000000000000 // 16 bytes, or 4 words
-    fastrpc argument 
-    invoking via fastrpc, handle 5, method 4, 1 inbufs, 1 outbufs, 0 inhandles, 0 outhandles
-    fastrpc return 91000000000000000002020029000000 // 16 bytes, or 4 words
-    fastrpc return 
-
-Since there are 2 input buffers excluding the first (these can have a variable
-size), 2 must be subtracted from the 4 input words. These will be provided by
-the wrapper as the sizes for the variable-length input and output buffers.
-
-Counting each of these will give the numbers needed for the function definition.
-
-A function definition looks like:
-
-    const struct fastrpc_function_def_interp2 adsp_listener_next2_def = {
-    	.msg_id = 4,
-    	.in_nums = 2,
-    	.in_bufs = 1,
-    	.out_nums = 4,
-    	.out_bufs = 1,
-    };
-
-or:
-
-    #define DEFINE_REMOTE_PROCEDURE(mid, name,				\
-    				innums, inbufs,				\
-    				outnums, outbufs)			\
-    	const struct fastrpc_function_def_interp2 name##_def = {	\
-    		.msg_id = mid,						\
-    		.in_nums = innums,					\
-    		.in_bufs = inbufs,					\
-    		.out_nums = outnums,					\
-    		.out_bufs = outbufs,					\
-    	};
-
-    DEFINE_REMOTE_PROCEDURE(4, adsp_listener_next2, 2, 1, 4, 1)
-
-# Reverse tunnel
-
-The reverse tunnel calls the `adsp_listener_next2` remote method to receive
-method calls for the Application Processor.
-
-Interfaces are initialized in the `start_reverse_tunnel` function, in hexagonrpcd/rpcd.c.
-
-## HexagonFS
-
-The reverse tunnel's `apps_std` interface serves files to the remote processor.
-These files are searched for in a directory tree, starting at the location
-defined by the `-R` option, or in `/usr/share/qcom` by default:
-
-    HexagonRPCD file/dir	Android file/dir
-    acdb			/vendor/etc/acdbdata
-    dsp			/vendor/dsp
-    sensors/config		/vendor/etc/sensors/config
-    sensors/registry	/mnt/vendor/persist/sensors/registry/registry
-    sensors/sns_reg.conf	/vendor/etc/sensors/sns_reg_config
-    socinfo			/sys/devices/soc0
-
-These files and directories should be populated with files from your device's
-Android firmware.
-
-If you can pass the `-R` option, the convention is to pass `-R
-/usr/share/qcom/SOC/VENDOR/DEVICE`, where SOC is the SoC name in lowercase,
-VENDOR is the capitalized name of the device vendor, and DEVICE is the device
-name (e.g. `-R /usr/share/qcom/sdm845/SHIFT/axolotl` or `-R
-/usr/share/qcom/sdm845/Thundercomm/db845c`).
-
-# Future plans
-
-Reverse tunnels are separated by the process that opens the file descriptor and
-cannot service requests from other processes that do not share the same file
-descriptor. There should be some daemon that opens the device and allows clients
-to send requests.
-
-FastRPC may be the way to offload work to the DSPs. When a FastRPC function call
-is made, the `<name>_skel_invoke` function in a shared object named
-`lib<name>_skel.so` is called on the DSP. Further investigation is needed to
-make a working build system for this.
+GNU General Public License v3.0

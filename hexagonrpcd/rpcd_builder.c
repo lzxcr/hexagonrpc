@@ -1,11 +1,11 @@
 /*
  * FastRPC virtual filesystem builder
  *
- * Copyright (C) 2023 The Sensor Shell Contributors
+ * Copyright (C) 2023-2025 The HexagonRPC Contributors
  *
- * This file is part of sensh.
+ * This file is part of HexagonRPC.
  *
- * Sensh is free software: you can redistribute it and/or modify
+ * HexagonRPC is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
@@ -206,4 +206,34 @@ struct hexagonfs_dirent *construct_root_dir(const char *prefix, const char *dsp)
 			),
 			vendor_dir
 		);
+}
+
+/*
+ * Wrap a root dirent so virt_dir_from_dirent can extract the
+ * physical root path for mkdir/rmdir/unlink operations.
+ */
+struct hexagonfs_dirent *construct_root_dir_with_prefix(const char *prefix, const char *dsp)
+{
+	struct hexagonfs_dirent *root = construct_root_dir(prefix, dsp);
+	struct virt_dir_dirent_data *root_data;
+
+	if (root == NULL)
+		return NULL;
+
+	/*
+	 * Replace the root dirent's u.dir with a virt_dir_dirent_data
+	 * that carries the physical root path. The virt_dir ops extract
+	 * this pointer as dirent_data and use it to resolve physical paths.
+	 */
+	root_data = malloc(sizeof(*root_data));
+	if (root_data == NULL) {
+		/* root is leaked, but construct_root_dir doesn't have a free path */
+		return root;
+	}
+
+	root_data->root_path = prefix;
+	root_data->dirlist = (const struct hexagonfs_dirent *const *)root->u.dir;
+	root->u.ptr = root_data;
+
+	return root;
 }
