@@ -308,3 +308,22 @@ HexagonRPC SHALL 包含三层测试：
 - **WHEN** 执行 `meson test -C build`
 - **THEN** 全部三层测试通过
 - **AND** dsp-simulation 测试覆盖：skel 加载、ACDB 访问、传感器配置、SoC 信息、seek/tell/stat、目录操作、错误路径
+
+### Requirement: 部署基础设施
+
+HexagonRPC SHALL 提供完整的部署文件，包括 udev 规则、sysusers.d 配置和 systemd service 单元，支持主流 Linux 发行版的打包流程。
+
+#### Scenario: 安装路径
+
+- **WHEN** 执行 `meson install`（含 `$DESTDIR` 环境变量）
+- **THEN** 二进制安装到 `{prefix}/bin/`，man page 安装到 `{prefix}/share/man/man8/`
+- **AND** udev 规则安装到 `{prefix}/lib/udev/rules.d/`
+- **AND** sysusers.d 配置安装到 `{prefix}/lib/sysusers.d/`
+- **AND** systemd service 单元安装到 `{prefix}/lib/systemd/system/`
+- **AND** man 符号链接脚本通过 `$DESTDIR` 前缀正确处理打包路径重定向
+
+#### Scenario: 守护进程名称
+
+- **WHEN** 安装完成
+- **THEN** 5 个 systemd service 单元可用：`hexagonrpcd-adsp`（rootpd）、`hexagonrpcd-adsp-audiopd`、`hexagonrpcd-adsp-sensorspd`、`hexagonrpcd-cdsp`、`hexagonrpcd-sdsp`
+- **AND** 每个 domain 有对应的 man page 符号链接：`hexagonrpcd-{domain}.8` → `hexagonrpcd.8`

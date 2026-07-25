@@ -630,3 +630,15 @@ HexagonRPC 实现了 **10 个**。
 ---
 
 *文档版本: 0.4.0 (匹配项目版本)*
+
+## 部署基础设施
+
+| 组件 | 文件 | 目标 |
+|------|------|------|
+| udev 规则 | `data/60-hexagonrpc.rules` | `/usr/lib/udev/rules.d/` |
+| sysusers.d | `data/hexagonrpc.conf` | `/usr/lib/sysusers.d/` |
+| systemd service | `data/*.service.in` → 5 个单元 | `/lib/systemd/system/` |
+| man page | `hexagonrpcd/hexagonrpcd.8` | `man/man8/` |
+| man symlinks | `data/install-man-symlinks.sh` | 为 5 个 domain 创建符号链接 |
+
+install-man-symlinks.sh 通过 `$DESTDIR` 前缀与 Meson 自定义安装脚本约定兼容，确保在 makepkg 等打包环境下正确安装。
