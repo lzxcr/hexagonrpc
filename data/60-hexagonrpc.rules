@@ -1,6 +1,14 @@
-ACTION=="add", KERNEL=="fastrpc-adsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp.service"
-ACTION=="add", KERNEL=="fastrpc-cdsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-cdsp.service"
-ACTION=="add", KERNEL=="fastrpc-sdsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-sdsp.service"
-ACTION=="add", KERNEL=="fastrpc-gdsp",   TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-gdsp.service"
-# Permissions: root:hexagonrpc, mode 0660
+# ADSP — triggers rootpd, audiopd, and sensorspd concurrently
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-adsp",         OWNER="root", GROUP="hexagonrpc", MODE="0660", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-audiopd.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-sensorspd.service"
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-adsp-secure",  TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-audiopd.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-sensorspd.service"
+
+# CDSP
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-cdsp",         OWNER="root", GROUP="hexagonrpc", MODE="0660", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-cdsp.service"
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-cdsp-secure",  TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-cdsp.service"
+
+# SDSP
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp",         OWNER="root", GROUP="hexagonrpc", MODE="0660", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-sdsp.service"
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-sdsp-secure",  TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-sdsp.service"
+
+# Permissions (catch-all for any other fastrpc devices)
 KERNEL=="fastrpc-*", OWNER="root", GROUP="hexagonrpc", MODE="0660"

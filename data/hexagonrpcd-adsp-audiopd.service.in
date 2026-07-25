@@ -1,12 +1,16 @@
 [Unit]
 Description=HexagonRPC — Qualcomm ADSP FastRPC daemon (audio PD)
-ConditionPathExists=/dev/fastrpc-adsp
+After=dev-fastrpc\x2dadsp.device dev-fastrpc\x2dadsp\x2dsecure.device
+ConditionPathExists=|/dev/fastrpc-adsp
+ConditionPathExists=|/dev/fastrpc-adsp-secure
 
 [Service]
-# Replace /path/to/audiopd.elf with the actual audio PD ELF for your device
-ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-adsp -d adsp -c /path/to/audiopd.elf
-Restart=always
-RestartSec=3
+Type=exec
+ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-adsp -d adsp -c audiopd
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=2
+RestartForceExitStatus=SIGTERM
 User=hexagonrpc
 Group=hexagonrpc
 

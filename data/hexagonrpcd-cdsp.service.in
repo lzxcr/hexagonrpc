@@ -1,11 +1,16 @@
 [Unit]
 Description=HexagonRPC — Qualcomm CDSP FastRPC daemon
-ConditionPathExists=/dev/fastrpc-cdsp
+After=dev-fastrpc\x2dcdsp.device dev-fastrpc\x2dcdsp\x2dsecure.device
+ConditionPathExists=|/dev/fastrpc-cdsp
+ConditionPathExists=|/dev/fastrpc-cdsp-secure
 
 [Service]
+Type=exec
 ExecStart=@bindir@/hexagonrpcd -f /dev/fastrpc-cdsp -d cdsp
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=2
+RestartForceExitStatus=SIGTERM
 User=hexagonrpc
 Group=hexagonrpc
 
