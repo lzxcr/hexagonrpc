@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -47,24 +48,45 @@ static const int apps_std_whence_table[] = {
 	SEEK_CUR,
 	SEEK_END,
 };
+/* Validate a FastRPC buffer contains a NUL-terminated string */
+static inline bool valid_cstring(const struct fastrpc_io_buffer *buf)
+{
+	return buf && buf->p && buf->s > 0 && buf->s < (size_t)-1 / 2
+	       && ((const char *)buf->p)[buf->s - 1] == 0;
+}
+
+/* Validate inbuf/outbuf minimum size */
+
+static inline bool output_ok(const struct fastrpc_io_buffer *buf, size_t min_sz)
+{
+	return buf && buf->p && buf->s >= min_sz;
+}
+
+static inline bool buffer_ok(const struct fastrpc_io_buffer *buf, size_t min_sz)
+{
+	return buf && buf->p && buf->s >= min_sz;
+}
+
 
 static uint32_t apps_std_fopen(void *data,
 			       const struct fastrpc_io_buffer *inbufs,
 			       struct fastrpc_io_buffer *outbufs)
 {
-	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	struct apps_std_ctx *ctx = data;
 	uint32_t *out = outbufs[0].p;
 	int fd;
 
+	if (!output_ok(&outbufs[0], sizeof(*out))) return AEE_EBADPARM;
+
 	/* inbufs[0] = prim: [name_len, mode_len]
 	 * inbufs[1] = name (NUL-terminated)
 	 * inbufs[2] = mode (NUL-terminated) */
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
-	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1])
+	 || !valid_cstring(&inbufs[2]))
 		return AEE_EBADPARM;
 
 	/* Try searching from the library path first, then root */
@@ -81,6 +103,8 @@ static uint32_t apps_std_fopen(void *data,
 	}
 
 #ifdef HEXAGONRPC_VERBOSE
+	ctx->fd_eof[fd] = false;
+	ctx->fd_err[fd] = false;
 	printf("fopen(%s) -> %d\n", (const char *)inbufs[1].p, fd);
 #endif
 
@@ -149,6 +173,7 @@ static uint32_t apps_std_fread(void *data,
 		uint32_t is_eof;
 	} *first_out = outbufs[0].p;
 	uint32_t fd = first_in->fd;
+	if (fd >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 	ssize_t ret;
 
 	ret = hexagonfs_read(ctx->fds, fd,
@@ -192,8 +217,11 @@ static uint32_t apps_std_fseek(void *data,
 	int ret;
 	int whence;
 
+	if (first_in->whence >= 3)
+		return AEE_EBADPARM;
 	whence = apps_std_whence_table[first_in->whence];
 
+	if (first_in->fd >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 	ret = hexagonfs_lseek(ctx->fds, first_in->fd, first_in->pos, whence);
 	if (ret) {
 		fprintf(stderr, "Could not seek stream: %s\n", strerror(-ret));
@@ -222,9 +250,9 @@ static uint32_t apps_std_fopen_with_env(void *data,
 		return AEE_EBADPARM;
 
 	// The name and environment variable must also be NULL-terminated
-	if (((const char *) inbufs[1].p)[inbufs[1].s - 1] != 0
-	 || ((const char *) inbufs[3].p)[inbufs[3].s - 1] != 0
-	 || ((const char *) inbufs[4].p)[inbufs[4].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1])
+	 || !valid_cstring(&inbufs[3])
+	 || !valid_cstring(&inbufs[4]))
 		return AEE_EBADPARM;
 
 	if (!strcmp(inbufs[1].p, "ADSP_LIBRARY_PATH"))
@@ -264,10 +292,12 @@ static uint32_t apps_std_flen(void *data,
 {
 	struct apps_std_ctx *ctx = data;
 	const uint32_t *first_in = inbufs[0].p;
+	if (!buffer_ok(&inbufs[0], sizeof(*first_in))) return AEE_EBADPARM;
 	uint64_t *len = outbufs[0].p;
 	struct stat st;
 	int ret;
 
+	if (*first_in >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 	ret = hexagonfs_fstat(ctx->fds, *first_in, &st);
 	if (ret) {
 		fprintf(stderr, "Could not flen fd %u: %s\n",
@@ -293,6 +323,7 @@ static uint32_t apps_std_ftell(void *data,
 	uint32_t *pos = outbufs[0].p;
 	off_t ret;
 
+	if (*first_in >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 	ret = hexagonfs_lseek(ctx->fds, *first_in, 0, SEEK_CUR);
 	if (ret < 0) {
 		fprintf(stderr, "Could not ftell fd %u: %s\n",
@@ -317,6 +348,8 @@ static uint32_t apps_std_rewind(void *data,
 	const uint32_t *first_in = inbufs[0].p;
 	int ret;
 
+	if (*first_in >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
+
 	ret = hexagonfs_lseek(ctx->fds, *first_in, 0, SEEK_SET);
 	if (ret) {
 		fprintf(stderr, "Could not rewind fd %u: %s\n",
@@ -340,8 +373,10 @@ static uint32_t apps_std_feof(void *data,
 {
 	struct apps_std_ctx *ctx = data;
 	const uint32_t *first_in = inbufs[0].p;
+	if (!buffer_ok(&inbufs[0], sizeof(*first_in))) return AEE_EBADPARM;
 	uint32_t *b_eof = outbufs[0].p;
 
+	if (*first_in >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 	*b_eof = ctx->fd_eof[*first_in] ? 1 : 0;
 
 	return 0;
@@ -353,8 +388,10 @@ static uint32_t apps_std_ferror(void *data,
 {
 	struct apps_std_ctx *ctx = data;
 	const uint32_t *first_in = inbufs[0].p;
+	if (!buffer_ok(&inbufs[0], sizeof(*first_in))) return AEE_EBADPARM;
 	uint32_t *err = outbufs[0].p;
 
+	if (*first_in >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 	*err = ctx->fd_err[*first_in] ? 1 : 0;
 
 	return 0;
@@ -367,6 +404,7 @@ static uint32_t apps_std_clearerr(void *data,
 	struct apps_std_ctx *ctx = data;
 	const uint32_t *first_in = inbufs[0].p;
 
+	if (*first_in >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 	ctx->fd_eof[*first_in] = false;
 	ctx->fd_err[*first_in] = false;
 
@@ -377,7 +415,7 @@ static uint32_t apps_std_print_string(void *data,
 				      const struct fastrpc_io_buffer *inbufs,
 				      struct fastrpc_io_buffer *outbufs)
 {
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	printf("DSP: %s\n", (const char *)inbufs[1].p);
@@ -397,7 +435,7 @@ static uint32_t apps_std_fileExists(void *data,
 	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
 		return AEE_EBADPARM;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
@@ -430,6 +468,8 @@ static uint32_t apps_std_fwrite(void *data,
 	} *first_out = outbufs[0].p;
 	ssize_t ret;
 
+	if (first_in->fd >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
+	if (!buffer_ok(&inbufs[0], sizeof(*first_in))) return AEE_EBADPARM;
 	ret = hexagonfs_write(ctx->fds, first_in->fd,
 			      first_in->buf_len, inbufs[1].p);
 	if (ret < 0) {
@@ -457,7 +497,7 @@ static uint32_t apps_std_fremove(void *data,
 	struct apps_std_ctx *ctx = data;
 	int ret;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	ret = hexagonfs_unlink(ctx->fds, ctx->rootfd, inbufs[1].p);
@@ -481,7 +521,7 @@ static uint32_t apps_std_mkdir(void *data,
 	} *first_in = inbufs[0].p;
 	int ret;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	ret = hexagonfs_mkdir(ctx->fds, ctx->rootfd,
@@ -501,7 +541,7 @@ static uint32_t apps_std_rmdir(void *data,
 {
 	struct apps_std_ctx *ctx = data;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	int ret = hexagonfs_rmdir(ctx->fds, ctx->rootfd, inbufs[1].p);
@@ -525,6 +565,8 @@ static uint32_t apps_std_ftrunc(void *data,
 	} *first_in = inbufs[0].p;
 	int ret;
 
+	if (first_in->fd >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
+	if (!buffer_ok(&inbufs[0], sizeof(*first_in))) return AEE_EBADPARM;
 	ret = hexagonfs_ftruncate(ctx->fds, first_in->fd, first_in->offset);
 	if (ret) {
 		fprintf(stderr, "Could not ftrunc fd %u: %s\n",
@@ -560,8 +602,8 @@ static uint32_t apps_std_frename(void *data,
 				 const struct fastrpc_io_buffer *inbufs,
 				 struct fastrpc_io_buffer *outbufs)
 {
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
-	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1])
+	 || !valid_cstring(&inbufs[2]))
 		return AEE_EBADPARM;
 
 	if (rename((const char *)inbufs[1].p, (const char *)inbufs[2].p))
@@ -574,7 +616,7 @@ static uint32_t apps_std_fopen_fd(void *data,
 				  const struct fastrpc_io_buffer *inbufs,
 				  struct fastrpc_io_buffer *outbufs)
 {
-	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	struct apps_std_ctx *ctx = data;
@@ -585,8 +627,8 @@ static uint32_t apps_std_fopen_fd(void *data,
 	struct stat st;
 	int fd;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
-	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1])
+	 || !valid_cstring(&inbufs[2]))
 		return AEE_EBADPARM;
 
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
@@ -606,6 +648,8 @@ static uint32_t apps_std_fopen_fd(void *data,
 		return AEE_EFAILED;
 	}
 
+	ctx->fd_eof[fd] = false;
+	ctx->fd_err[fd] = false;
 	out[0] = fd;
 	out[1] = (uint32_t)st.st_size;
 
@@ -640,8 +684,8 @@ static uint32_t apps_std_fopen_with_env_fd(void *data,
 	struct stat st;
 	int dirfd, fd;
 
-	if (((const char *)inbufs[3].p)[inbufs[3].s - 1] != 0
-	 || ((const char *)inbufs[4].p)[inbufs[4].s - 1] != 0)
+	if (!valid_cstring(&inbufs[3])
+	 || !valid_cstring(&inbufs[4]))
 		return AEE_EBADPARM;
 
 	if (!strcmp(inbufs[1].p, "ADSP_LIBRARY_PATH"))
@@ -663,6 +707,8 @@ static uint32_t apps_std_fopen_with_env_fd(void *data,
 		return AEE_EFAILED;
 	}
 
+	ctx->fd_eof[fd] = false;
+	ctx->fd_err[fd] = false;
 	out[0] = fd;
 	out[1] = (uint32_t)st.st_size;
 
@@ -706,6 +752,7 @@ static uint32_t apps_std_fgets(void *data,
 
 	/* Read up to buf_size bytes, stop at newline or EOF */
 	while (total < (ssize_t)first_in->buf_size - 1) {
+		if (first_in->fd >= HEXAGONFS_MAX_FD) return AEE_EBADPARM;
 		ret = hexagonfs_read(ctx->fds, first_in->fd, 1, &c);
 		if (ret < 0) {
 			ctx->fd_err[first_in->fd] = true;
@@ -742,9 +789,10 @@ static uint32_t apps_std_freopen(void *data,
 		uint32_t mode_len;
 	} *first_in = inbufs[0].p;
 	uint32_t *psout = outbufs[0].p;
+	if (!output_ok(&outbufs[0], sizeof(*psout))) return AEE_EBADPARM;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
-	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1])
+	 || !valid_cstring(&inbufs[2]))
 		return AEE_EBADPARM;
 
 	/* Close old fd, open new one */
@@ -832,7 +880,7 @@ static uint32_t apps_std_getenv(void *data,
 	char *val = outbufs[1].p;
 	const char *env_val;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	env_val = getenv(name);
@@ -859,11 +907,12 @@ static uint32_t apps_std_setenv(void *data,
 		uint32_t name_len;
 		uint32_t val_len;
 	} *first_in = inbufs[0].p;
+	if (!buffer_ok(&inbufs[0], 12)) return AEE_EBADPARM;
 	const char *name = inbufs[1].p;
 	const char *val = inbufs[2].p;
 
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0
-	 || ((const char *)inbufs[2].p)[inbufs[2].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1])
+	 || !valid_cstring(&inbufs[2]))
 		return AEE_EBADPARM;
 
 	if (setenv(name, val, first_in->override))
@@ -876,7 +925,7 @@ static uint32_t apps_std_unsetenv(void *data,
 				  const struct fastrpc_io_buffer *inbufs,
 				  struct fastrpc_io_buffer *outbufs)
 {
-	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	unsetenv((const char *)inbufs[1].p);
@@ -893,7 +942,7 @@ static uint32_t apps_std_opendir(void *data,
 	int ret;
 
 	// The name must be NULL-terminated
-	if (((const char *) inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	ret = hexagonfs_openat(ctx->fds, ctx->rootfd, ctx->rootfd, inbufs[1].p);
@@ -982,11 +1031,12 @@ static uint32_t apps_std_stat(void *data,
 		int64_t ctime;
 		int64_t ctimensec;
 	} *first_out = outbufs[0].p;
+	if (!output_ok(&outbufs[0], sizeof(*first_out))) return AEE_EBADPARM;
 	const char *pathname = inbufs[1].p;
 	struct stat stats;
 	int fd, ret;
 
-	if (((const char *) inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (!valid_cstring(&inbufs[1]))
 		return AEE_EBADPARM;
 
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd, ctx->adsp_library_dirfd, pathname);
@@ -1000,6 +1050,7 @@ static uint32_t apps_std_stat(void *data,
 	if (ret) {
 		fprintf(stderr, "Could not stat %s: %s\n",
 				pathname, strerror(-fd));
+		hexagonfs_close(ctx->fds, fd);
 		return AEE_EFAILED;
 	}
 
@@ -1071,6 +1122,12 @@ struct fastrpc_interface *fastrpc_apps_std_init(struct hexagonfs_dirent *root)
 	return iface;
 
 err_free_ctx:
+	if (ctx->adsp_library_dirfd >= 0)
+		hexagonfs_close(ctx->fds, ctx->adsp_library_dirfd);
+	if (ctx->adsp_avs_cfg_dirfd >= 0)
+		hexagonfs_close(ctx->fds, ctx->adsp_avs_cfg_dirfd);
+	if (ctx->rootfd >= 0)
+		hexagonfs_close(ctx->fds, ctx->rootfd);
 	free(ctx);
 err_free_iface:
 	free(iface);
@@ -1245,6 +1302,6 @@ static const struct fastrpc_function_impl apps_std_procs[] = {
 
 const struct fastrpc_interface apps_std_interface = {
 	.name = "apps_std",
-	.n_procs = 37,
+	.n_procs = sizeof(apps_std_procs) / sizeof(apps_std_procs[0]),
 	.procs = apps_std_procs,
 };
