@@ -454,7 +454,7 @@ int main(int argc, char* argv[])
 	if (ret)
 		goto err_close_dev;
 
-		cfg = hexagonrpc_config_load(device_dir);
+	cfg = hexagonrpc_config_load(device_dir);
 	start_reverse_tunnel(fd, device_dir, dsp, cfg);
 	hexagonrpc_config_free(cfg);
 
