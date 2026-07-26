@@ -54,6 +54,8 @@ static uint32_t apps_std_fopen(void *data,
 {
 	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
 		return AEE_EBADPARM;
+	if (inbufs[3].s == 0 || ((const char *)inbufs[3].p)[0] == 0)
+		return AEE_EBADPARM;
 
 	struct apps_std_ctx *ctx = data;
 	uint32_t *out = outbufs[0].p;
@@ -396,6 +398,9 @@ static uint32_t apps_std_fileExists(void *data,
 	struct stat st;
 	int fd, ret;
 
+	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
+		return AEE_EBADPARM;
+
 	if (((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
 		return AEE_EBADPARM;
 
@@ -574,6 +579,8 @@ static uint32_t apps_std_fopen_fd(void *data,
 				  struct fastrpc_io_buffer *outbufs)
 {
 	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
+		return AEE_EBADPARM;
+	if (inbufs[3].s == 0 || ((const char *)inbufs[3].p)[0] == 0)
 		return AEE_EBADPARM;
 
 	struct apps_std_ctx *ctx = data;
