@@ -6,6 +6,10 @@
             "physical": "/etc/"
         },
         {
+            "virtual": "/vendor/etc/acdbdata",
+            "physical": "/etc/"
+        },
+        {
             "virtual": "/persist",
             "physical": "/persist/"
         },

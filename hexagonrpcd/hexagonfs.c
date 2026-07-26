@@ -148,6 +148,14 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd, int dirfd, const cha
 	int selected = dirfd;
 	int ret = 0;
 
+	/* Basic FD validation */
+	if (selected < 0 || selected >= 256) {
+		if (selected >= -256) return selected; /* propagates -errno */
+		return -EBADF;
+	}
+	if (fds[selected] == NULL)
+		return -EBADF;
+
 	if (*curr == '/') {
 		selected = rootfd;
 
