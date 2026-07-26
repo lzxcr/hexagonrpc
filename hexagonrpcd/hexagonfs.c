@@ -180,7 +180,6 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd, int dirfd, const cha
 			ret = fd->ops->openat(fd, segment, expect_dir, &fd);
 		}
 
-		if (ret)
 			fprintf(stderr, "  [trace] segment='%s' expect_dir=%d %s\n",
 				segment, expect_dir, ret < 0 ? strerror(-ret) : "OK");
 
