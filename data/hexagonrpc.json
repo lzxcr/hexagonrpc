@@ -6,6 +6,10 @@
             "physical": "odm/etc"
         },
         {
+            "virtual": "/vendor/etc",
+            "physical": "vendor/etc"
+        },
+        {
             "virtual": "/persist",
             "physical": "persist"
         },
