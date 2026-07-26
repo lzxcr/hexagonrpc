@@ -206,6 +206,8 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd,
 		fd = root_fd;
 		curr = skip_slashes(curr);
 	} else {
+		if (dirfd < 0)
+			return dirfd; /* propagate -errno from invalid dirfd */
 		fd = hexagonfs_get_fd(fds, dirfd);
 		if (!fd)
 			return -EBADF;
