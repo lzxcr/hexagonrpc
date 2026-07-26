@@ -148,6 +148,9 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd, int dirfd, const cha
 	int selected = dirfd;
 	int ret = 0;
 
+	fprintf(stderr, "  [hxopen] dirfd=%d rootfd=%d path='%s'\n",
+		dirfd, rootfd, name);
+
 	/* Basic FD validation */
 	if (selected < 0 || selected >= 256) {
 		if (selected >= -256) return selected; /* propagates -errno */
