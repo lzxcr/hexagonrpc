@@ -217,33 +217,34 @@ static uint32_t apps_std_fopen_with_env(void *data,
 	uint32_t *out = outbufs[0].p;
 	int dirfd, fd;
 
+	/* inbufs[1] = envvar, inbufs[3] = name, inbufs[4] = mode */
+	if (inbufs[3].s == 0 || ((const char *)inbufs[3].p)[0] == 0)
+		return AEE_EBADPARM;
+
 	// The name and environment variable must also be NULL-terminated
 	if (((const char *) inbufs[1].p)[inbufs[1].s - 1] != 0
 	 || ((const char *) inbufs[3].p)[inbufs[3].s - 1] != 0
 	 || ((const char *) inbufs[4].p)[inbufs[4].s - 1] != 0)
 		return AEE_EBADPARM;
 
-	if (!strcmp(inbufs[1].p, "ADSP_LIBRARY_PATH")) {
+	if (!strcmp(inbufs[1].p, "ADSP_LIBRARY_PATH"))
 		dirfd = ctx->adsp_library_dirfd;
-	} else if (!strcmp(inbufs[1].p, "ADSP_AVS_CFG_PATH")) {
+	else if (!strcmp(inbufs[1].p, "ADSP_AVS_CFG_PATH"))
 		dirfd = ctx->adsp_avs_cfg_dirfd;
-	} else {
-		fprintf(stderr, "Unknown search directory %s\n",
-				(const char *) inbufs[1].p);
+	else {
+		fprintf(stderr, "Unknown search path: %s\n",
+			(const char *)inbufs[1].p);
 		return AEE_EBADPARM;
 	}
 
-	if (dirfd < 0) {
-		fprintf(stderr, "Could not open virtual %s: %s\n",
-				(const char *) inbufs[1].p, strerror(-dirfd));
-		return AEE_EFAILED;
-	}
+	/* Fall back to rootfd if virtual path is not configured */
+	if (dirfd < 0)
+		dirfd = ctx->rootfd;
 
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd, dirfd, inbufs[3].p);
 	if (fd < 0) {
-		fprintf(stderr, "Could not open %s: %s\n",
-				(const char *) inbufs[3].p,
-				strerror(-fd));
+		fprintf(stderr, "File not found: %s\n",
+			(const char *)inbufs[3].p);
 		return AEE_EFAILED;
 	}
 
@@ -641,11 +642,13 @@ static uint32_t apps_std_fopen_with_env_fd(void *data,
 
 	if (!strcmp(inbufs[1].p, "ADSP_LIBRARY_PATH"))
 		dirfd = ctx->adsp_library_dirfd;
+	else if (!strcmp(inbufs[1].p, "ADSP_AVS_CFG_PATH"))
+		dirfd = ctx->adsp_avs_cfg_dirfd;
 	else
 		return AEE_EUNSUPPORTED;
 
 	if (dirfd < 0)
-		return AEE_EFAILED;
+		dirfd = ctx->rootfd;
 
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd, dirfd, inbufs[3].p);
 	if (fd < 0)
@@ -1047,6 +1050,17 @@ struct fastrpc_interface *fastrpc_apps_std_init(struct hexagonfs_dirent *root)
 						   ctx->rootfd,
 						   ctx->rootfd,
 						   "/usr/lib/qcom/adsp/");
+
+	/*
+	 * Missing virtual paths are not fatal — the DSP may never use them.
+	 * The fopen family silently falls back to rootfd when dirfd < 0.
+	 */
+#ifdef HEXAGONRPC_VERBOSE
+	if (ctx->adsp_avs_cfg_dirfd < 0)
+		fprintf(stderr, "Note: /vendor/etc/acdbdata/ not in config\n");
+	if (ctx->adsp_library_dirfd < 0)
+		fprintf(stderr, "Note: /usr/lib/qcom/adsp/ not in config\n");
+#endif
 
 	iface->data = ctx;
 

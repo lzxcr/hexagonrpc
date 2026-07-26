@@ -31,21 +31,21 @@ int main(int argc, char **argv) {
 
     /* Setup: mkdir -p all at once, then create files */
     char cmd[1024];
-    snprintf(cmd,sizeof(cmd),"mkdir -p %s/etc %s/persist %s/socinfo 2>/dev/null",root,root,root);
+    snprintf(cmd,sizeof(cmd),"mkdir -p %s/vendor/etc %s/persist %s/socinfo 2>/dev/null",root,root,root);
     (void)!system(cmd);
 
     int fd; char p[512], buf[256];
-    snprintf(p,sizeof(p),"%s/etc/test.bin",root);
-    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"hello_etc_data",14);close(fd);}
-    snprintf(p,sizeof(p),"%s/etc/libtest_skel.so",root);
+    snprintf(p,sizeof(p),"%s/vendor/etc/test.bin",root);
+    fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"hello_vendor",14);close(fd);}
+    snprintf(p,sizeof(p),"%s/vendor/etc/libtest_skel.so",root);
     fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"SKEL_DATA_FOR_LOAD",18);close(fd);}
-    snprintf(p,sizeof(p),"%s/etc/libtest2.so",root);
+    snprintf(p,sizeof(p),"%s/vendor/etc/libtest2.so",root);
     fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"ABCDEFGHIJKLMNOPQRSTUVWXYZ",26);close(fd);}
-    snprintf(p,sizeof(p),"%s/etc/test.json",root);
+    snprintf(p,sizeof(p),"%s/vendor/etc/test.json",root);
     fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"{cfg:1}",7);close(fd);}
     snprintf(p,sizeof(p),"%s/persist/test.reg",root);
     fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"REG_1234",8);close(fd);}
-    snprintf(p,sizeof(p),"%s/etc/sns_reg.conf",root);
+    snprintf(p,sizeof(p),"%s/vendor/etc/sns_reg.conf",root);
     fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"#CFG",4);close(fd);}
     snprintf(p,sizeof(p),"%s/socinfo/machine",root);
     fd=open(p,O_WRONLY|O_CREAT|O_TRUNC,0644); if(fd>=0){(void)!write(fd,"TEST_SOC",8);close(fd);}
@@ -53,10 +53,10 @@ int main(int argc, char **argv) {
     /* Build HexagonFS */
     struct hexagonfs_fd *fds[256]={0};
     struct hexagonrpc_path_mapping tmaps[]={
-            {"/vendor/etc","etc/"},
-            {"/persist","persist/"},
-            {"/sys/devices/soc0","socinfo/"}};
-    struct hexagonrpc_config test_cfg={.root_path=NULL,.mappings=tmaps,.n_mappings=3};
+            {"/vendor/etc","vendor/etc"},
+            {"/persist","persist"},
+            {"/usr/lib/qcom/adsp","vendor/etc"},{"/sys/devices/soc0","socinfo"}};
+    struct hexagonrpc_config test_cfg={.root_path=NULL,.mappings=tmaps,.n_mappings=4};
     struct hexagonfs_dirent *rt=construct_root_dir_with_prefix(root,"adsp",&test_cfg);
     int rf=hexagonfs_open_root(fds,rt);
     T("open HexagonFS root",rf>=0);
@@ -84,10 +84,10 @@ int main(int argc, char **argv) {
 
     fd=hexagonfs_openat(fds,rf,rf,"/vendor/etc/test.bin");
     T("2a open acdb",fd>=0);
-    if(fd>=0){n=hexagonfs_read(fds,fd,sizeof(buf),buf);T("2a content",memcmp(buf,"hello_etc_data",14)==0);hexagonfs_close(fds,fd);}
+    if(fd>=0){n=hexagonfs_read(fds,fd,sizeof(buf),buf);T("2a content",memcmp(buf,"hello_vendor",14)==0);hexagonfs_close(fds,fd);}
 
     fd=hexagonfs_openat(fds,rf,rf,"/system/vendor/etc/test.bin");
-    if(fd>=0){hexagonfs_read(fds,fd,sizeof(buf),buf);T("2b same",memcmp(buf,"hello_etc_data",14)==0);hexagonfs_close(fds,fd);}
+    if(fd>=0){hexagonfs_read(fds,fd,sizeof(buf),buf);T("2b same",memcmp(buf,"hello_vendor",14)==0);hexagonfs_close(fds,fd);}
 
     /* Phase 3: Sensor config */
     printf("\n\033[1;34m--- Phase 3: Sensor configuration ---\033[0m\n");

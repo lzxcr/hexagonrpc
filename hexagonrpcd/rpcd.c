@@ -389,6 +389,8 @@ int main(int argc, char* argv[])
 	if (guessed_device_dir != NULL)
 		device_dir = guessed_device_dir;
 
+	fprintf(stderr, "Device directory: %s\n", device_dir);
+
 	while ((opt = getopt(argc, argv, "a:c:d:f:p:R:s")) != -1) {
 		switch (opt) {
 		case 'a':
