@@ -70,8 +70,6 @@ static uint32_t apps_std_fopen(void *data,
 		return AEE_EBADPARM;
 
 	/* Try searching from the library path first, then root */
-	fprintf(stderr, "  [fopen] path='%s' libfd=%d rootfd=%d\n",
-		(const char*)inbufs[1].p, ctx->adsp_library_dirfd, ctx->rootfd);
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
 			      ctx->adsp_library_dirfd, inbufs[1].p);
 	if (fd < 0) {

@@ -148,8 +148,6 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd, int dirfd, const cha
 	int selected = dirfd;
 	int ret = 0;
 
-	fprintf(stderr, "  [hxopen] dirfd=%d rootfd=%d path='%s'\n",
-		dirfd, rootfd, name);
 
 	/* Basic FD validation */
 	if (selected < 0 || selected >= 256) {
@@ -182,9 +180,6 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd, int dirfd, const cha
 		} else {
 			ret = fd->ops->openat(fd, segment, expect_dir, &fd);
 		}
-
-			fprintf(stderr, "  [trace] segment='%s' expect_dir=%d %s\n",
-				segment, expect_dir, ret < 0 ? strerror(-ret) : "OK");
 
 	next:
 		free(segment);
