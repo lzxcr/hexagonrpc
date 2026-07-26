@@ -21,6 +21,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdbool.h>
@@ -90,6 +91,8 @@ static int mapped_from_dirent(const void *dirent_data, bool dir, void **fd_data)
 
 	ctx->fd = mapped_open_path(name, dir);
 	if (ctx->fd == -1) {
+		fprintf(stderr, "  [hexagonfs] open failed: %s (errno=%d)\n",
+			name, errno);
 		ret = -errno;
 		goto err;
 	}
@@ -127,6 +130,8 @@ static int mapped_openat(struct hexagonfs_fd *dir,
 
 	ctx->fd = mapped_openat_path(dir_ctx->fd, segment, expect_dir);
 	if (ctx->fd == -1) {
+		fprintf(stderr, "  [hexagonfs] openat failed: dirfd=%d, segment=%s (errno=%d)\n",
+			dir_ctx->fd, segment, errno);
 		ret = -errno;
 		goto err_free_fd;
 	}
