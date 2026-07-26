@@ -56,7 +56,7 @@ static int mapped_open_path(const char *name, bool dir)
 		flags |= O_DIRECTORY;
 
 	int fd = open(name, flags);
-	if (fd == -1 && (errno == EACCES || errno == EISDIR)) {
+	if (fd == -1 && (errno == EACCES || errno == EROFS || errno == EISDIR || errno == EPERM)) {
 		flags = (flags & ~O_ACCMODE) | O_RDONLY;
 		fd = open(name, flags);
 	}
@@ -71,7 +71,7 @@ static int mapped_openat_path(int dir_fd, const char *segment, bool dir)
 		flags |= O_DIRECTORY;
 
 	int fd = openat(dir_fd, segment, flags);
-	if (fd == -1 && (errno == EACCES || errno == EROFS || errno == EISDIR)) {
+	if (fd == -1 && (errno == EACCES || errno == EROFS || errno == EISDIR || errno == EPERM)) {
 		flags = (flags & ~O_ACCMODE) | O_RDONLY;
 		fd = openat(dir_fd, segment, flags);
 	}
