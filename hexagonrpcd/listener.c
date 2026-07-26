@@ -228,13 +228,15 @@ static int invoke_requested_procedure(size_t n_ifaces,
 	}
 
 	if (handle >= n_ifaces) {
-		fprintf(stderr, "Unsupported handle: %u\n", handle);
+		fprintf(stderr, "Unsupported handle: %u (method=%u, sc=0x%08x)\n",
+			handle, REMOTE_SCALARS_METHOD(sc), sc);
 		*result = AEE_EUNSUPPORTED;
 		return 1;
 	}
 
 	if (method >= ifaces[handle]->n_procs) {
-		fprintf(stderr, "Unsupported method: %u (%08x)\n", method, sc);
+		fprintf(stderr, "Unsupported method: %u (handle=%u, sc=0x%08x, max=%u)\n",
+			method, handle, sc, (unsigned)ifaces[handle]->n_procs);
 		*result = AEE_EUNSUPPORTED;
 		return 1;
 	}
@@ -242,7 +244,8 @@ static int invoke_requested_procedure(size_t n_ifaces,
 	impl = &ifaces[handle]->procs[method];
 
 	if (impl->def == NULL || impl->impl == NULL) {
-		fprintf(stderr, "Unsupported method: %u (%08x)\n", method, sc);
+		fprintf(stderr, "Unimplemented method: %u (handle=%u, sc=0x%08x)\n",
+			method, handle, sc);
 		*result = AEE_EUNSUPPORTED;
 		return 1;
 	}

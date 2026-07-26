@@ -9,16 +9,27 @@ struct hexagonrpc_config *hexagonrpc_config_load(const char *root_path) {
 	struct hexagonrpc_config *cfg;
 	struct json_object *root, *obj;
 	char *path;
+	int path_len;
 
 	cfg = calloc(1, sizeof(*cfg));
 	if (!cfg) return NULL;
 
 	cfg->root_path = root_path ? strdup(root_path) : NULL;
 
-	path = strdup("/usr/share/qcom/conf.d/hexagonrpc.json");
+	/* Try device-local config first, then fall back to global */
+	path_len = snprintf(NULL, 0, "%s/hexagonrpc.json", root_path ? root_path : "/usr/share/qcom");
+	path = malloc(path_len + 1);
 	if (!path) goto out;
+	sprintf(path, "%s/hexagonrpc.json", root_path ? root_path : "/usr/share/qcom");
 
 	root = json_object_from_file(path);
+	if (!root) {
+		/* Fallback: try global conf.d */
+		free(path);
+		path = strdup("/usr/share/qcom/conf.d/hexagonrpc.json");
+		if (!path) goto out;
+		root = json_object_from_file(path);
+	}
 	free(path);
 	if (!root) goto out;
 

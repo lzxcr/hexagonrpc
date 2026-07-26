@@ -2,15 +2,14 @@
 
 FastRPC ioctl 包装库 + 反向隧道守护进程 + HexagonFS 虚拟文件系统。
 
-用于与 Qualcomm DSP(ADSP/SDSP/CDSP)通信,为 DSP 程序提供文件服务,
-支持主线 Linux 上的 Android 固件路径透明重定向。
+用于与 Qualcomm DSP（ADSP/SDSP/CDSP）通信，为 DSP 程序在主线 Linux 上提供完整的文件 I/O 和内存映射服务，支持 Android 固件路径透明重定向。
 
 ## 架构
 
 ```
-┌─ libhexagonrpc ── 共享库 (fastrpc/fastrpc2/remotectl 包装)
-├─ hexagonrpcd    ── 守护进程 (反向隧道 + HexagonFS)
-└─ HexagonFS      ── 虚拟目录树: Android 路径 → Linux 物理路径
+┌─ libhexagonrpc ── 共享库 (fastrpc2 / fastrpc / remotectl 包装)
+├─ hexagonrpcd    ── 守护进程 (反向隧道 + 接口调度)
+└─ HexagonFS      ── 虚拟目录树: Android 路径 → Linux 物理路径 (读写)
 ```
 
 ## 构建
@@ -18,8 +17,10 @@ FastRPC ioctl 包装库 + 反向隧道守护进程 + HexagonFS 虚拟文件系�
 ```bash
 meson setup build
 ninja -C build
-ninja -C build install  # 安装到 /usr/local/
+ninja -C build install   # 可选, 安装到 /usr/local/
 ```
+
+启用详细日志：`meson setup build -Dhexagonrpcd_verbose=true`
 
 ## 运行
 
@@ -27,25 +28,23 @@ ninja -C build install  # 安装到 /usr/local/
 hexagonrpcd -f /dev/fastrpc-adsp -R /usr/share/qcom/sdm845/SHIFT/axolotl
 ```
 
-参数:
-- `-f DEVICE` — FastRPC 设备节点 (必需)
-- `-R DIR` — HexagonFS 根目录 (默认 /usr/share/qcom/)
-- `-d DSP` — DSP 名称 (默认 adsp)
-- `-s` — sensors PD 模式
-- `-c SHELL` — 创建自定义 PD 加载 ELF
-- `-p PROGRAM` — 启动子客户端 (共享 FD)
+| 参数 | 说明 |
+|------|------|
+| `-f DEVICE` | FastRPC 设备节点 (必需) |
+| `-R DIR` | HexagonFS 根目录 (默认 /usr/share/qcom/) |
+| `-d DSP` | DSP 名称 (默认空) |
+| `-s` | sensorspd 模式 |
+| `-c SHELL` | 创建自定义 PD 加载 ELF |
+| `-p PROGRAM` | 启动子客户端 (共享 FD) |
 
-## 方法覆盖
+## 接口覆盖
 
-| 接口 | 方法 | 覆盖率 |
-|------|------|--------|
-| apps_std | fopen/close/read/write/seek/stat/opendir 等 | **37/37** ✅ |
-| apps_mem | mmap/munmap/share_map/dma_handle 等 | **8/8** ✅ |
-| remotectl | open/close | **2/2** ✅ |
-| adsp_listener | init2/next2 | **2/2** ✅ |
-| chre_slpi | start_thread/wait_on_thread_exit | **2/2** ✅ |
-
-详细文档见 `docs/`。
+| 接口 | 方法数 | 覆盖率 |
+|------|--------|--------|
+| apps_std | 37 | **37/37** ✅ |
+| apps_mem | 8 | **8/8** ✅ |
+| remotectl | 2 | **2/2** ✅ |
+| adsp_listener | 2 | **2/2** ✅ |
 
 ## HexagonFS 路径映射
 
@@ -55,11 +54,7 @@ hexagonrpcd -f /dev/fastrpc-adsp -R /usr/share/qcom/sdm845/SHIFT/axolotl
 | `/vendor/dsp/{dsp}/` | `{root}/dsp/{dsp}/` |
 | `/vendor/etc/sensors/config/` | `{root}/sensors/config/` |
 | `/persist/sensors/registry/` | `{root}/sensors/registry/` |
-| `/vendor/etc/sensors/sns_reg_config` | `{root}/sensors/sns_reg.conf` |
 | `/sys/devices/soc0/` | `{root}/socinfo/` |
-| `/usr/lib/qcom/{dsp}/` | `{root}/dsp/{dsp}/` |
-
-支持硬链接: `/vendor/` ↔ `/system/vendor/`, `/persist/` ↔ `/mnt/vendor/persist/`
 
 ## 测试
 
@@ -68,6 +63,14 @@ meson test -C build
 # 输出: iobuffer OK, hexagonfs OK, dsp-simulation OK
 ```
 
+## 文档
+
+- [快速入门](docs/QUICKSTART.md)
+- [架构总览](docs/ARCHITECTURE.md)
+- [API 参考](docs/API.md)
+- [配置指南](docs/CONFIGURATION.md)
+- [系统规格](openspec/specs/) — 基线行为规格 (Requirements + Scenarios)
+
 ## 许可
 
-GNU General Public License v3.0
+GNU General Public License v3.0 (见 [`COPYING`](COPYING))

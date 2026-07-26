@@ -51,7 +51,7 @@ static const int apps_std_whence_table[] = {
 /* Validate a FastRPC buffer contains a NUL-terminated string */
 static inline bool valid_cstring(const struct fastrpc_io_buffer *buf)
 {
-	return buf && buf->p && buf->s > 0 && buf->s < (size_t)-1 / 2
+	return buf && buf->p && buf->s > 1
 	       && ((const char *)buf->p)[buf->s - 1] == 0;
 }
 
@@ -97,7 +97,7 @@ static uint32_t apps_std_fopen(void *data,
 				      ctx->rootfd, inbufs[1].p);
 	}
 	if (fd < 0) {
-		fprintf(stderr, "Could not open %s: %s\n",
+		fprintf(stderr, "fopen(%s): %s\n",
 			(const char *)inbufs[1].p, strerror(-fd));
 		return AEE_EFAILED;
 	}
@@ -947,7 +947,7 @@ static uint32_t apps_std_opendir(void *data,
 
 	ret = hexagonfs_openat(ctx->fds, ctx->rootfd, ctx->rootfd, inbufs[1].p);
 	if (ret < 0) {
-		fprintf(stderr, "Could not open %s: %s\n",
+		fprintf(stderr, "opendir(%s): %s\n",
 				(const char *) inbufs[1].p,
 				strerror(-ret));
 		return AEE_EFAILED;
@@ -1041,7 +1041,7 @@ static uint32_t apps_std_stat(void *data,
 
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd, ctx->adsp_library_dirfd, pathname);
 	if (fd < 0) {
-		fprintf(stderr, "Could not open %s: %s\n",
+		fprintf(stderr, "fopen_fd(%s): %s\n",
 				pathname, strerror(-fd));
 		return AEE_EFAILED;
 	}
