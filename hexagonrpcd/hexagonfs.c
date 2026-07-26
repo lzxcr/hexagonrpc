@@ -148,6 +148,11 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd, int dirfd, const cha
 	int selected = dirfd;
 	int ret = 0;
 
+	if (*curr == '/') {
+		selected = rootfd;
+		while (*curr == '/')
+			curr++;
+	}
 
 	/* Basic FD validation */
 	if (selected < 0 || selected >= 256) {
@@ -156,13 +161,6 @@ int hexagonfs_openat(struct hexagonfs_fd **fds, int rootfd, int dirfd, const cha
 	}
 	if (fds[selected] == NULL)
 		return -EBADF;
-
-	if (*curr == '/') {
-		selected = rootfd;
-
-		while (*curr == '/')
-			curr++;
-	}
 
 	fd = fds[selected];
 
