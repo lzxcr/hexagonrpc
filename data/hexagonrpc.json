@@ -2,20 +2,16 @@
     "_comment": "Physical paths are subdirectories relative to the -R root.",
     "path_mappings": [
         {
-            "virtual": "/vendor/etc",
-            "physical": "etc/"
-        },
-        {
-            "virtual": "/usr/lib/qcom/adsp",
-            "physical": "etc/"
+            "virtual": "/odm/etc",
+            "physical": "odm/etc"
         },
         {
             "virtual": "/persist",
-            "physical": "persist/"
+            "physical": "persist"
         },
         {
             "virtual": "/sys/devices/soc0",
-            "physical": "socinfo/"
+            "physical": "socinfo"
         }
     ]
 }
