@@ -174,6 +174,12 @@ static int return_for_next_invoke(int fd,
 		goto err_free_outbufs;
 	}
 
+	fprintf(stderr, "[raw] rctx=%u handle=%u sc=0x%08x inbufs_len=%u method=%u in=%u out=%u\n",
+		*rctx, *handle, *sc, inbufs_len,
+		REMOTE_SCALARS_METHOD(*sc),
+		REMOTE_SCALARS_INBUFS(*sc),
+		REMOTE_SCALARS_OUTBUFS(*sc));
+
 	if (inbufs_len > 256) {
 		fprintf(stderr, "Large (>256B) input buffers aren't implemented\n");
 		ret = -1;
@@ -289,7 +295,7 @@ int run_fastrpc_listener(int fd,
 {
 	struct fastrpc_io_buffer *decoded = NULL,
 				 *returned = NULL;
-	uint32_t result = 0xffffffff;
+	uint32_t result = 0; /* AEE_SUCCESS — no prior invocation */
 	uint32_t handle;
 	uint32_t rctx = 0;
 	uint32_t sc = REMOTE_SCALARS_MAKE(0, 0, 0);
@@ -308,6 +314,25 @@ int run_fastrpc_listener(int fd,
 					     returned, &decoded);
 		if (ret)
 			break;
+
+		fprintf(stderr, "[listener] handle=%u method=%u sc=0x%08x in_n=%u out_n=%u",
+			handle,
+			REMOTE_SCALARS_METHOD(sc),
+			sc,
+			REMOTE_SCALARS_INBUFS(sc),
+			REMOTE_SCALARS_OUTBUFS(sc));
+		if (decoded) {
+			for (uint32_t bi = 0; bi < REMOTE_SCALARS_INBUFS(sc); bi++) {
+				fprintf(stderr, " inbuf[%u].s=%u", bi, decoded[bi].s);
+				if (decoded[bi].p && decoded[bi].s > 0 && decoded[bi].s <= 64) {
+					fprintf(stderr, " \"");
+					for (uint32_t ci = 0; ci < decoded[bi].s && ci < 64; ci++)
+						fputc(((char*)decoded[bi].p)[ci] >= 32 ? ((char*)decoded[bi].p)[ci] : '.', stderr);
+					fprintf(stderr, "\"");
+				}
+			}
+		}
+		fprintf(stderr, "\n");
 
 		if (returned != NULL)
 			iobuf_free(n_outbufs, returned);
