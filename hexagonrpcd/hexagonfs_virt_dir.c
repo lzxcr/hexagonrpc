@@ -18,6 +18,7 @@
 struct virt_dir_ctx {
 	const struct hexagonfs_dirent *const *dirlist;
 	char *root_path;
+	int readdir_index;   /* position for readdir iteration */
 };
 
 static const struct hexagonfs_dirent *walk_dir(const struct hexagonfs_dirent *const *dir,
@@ -143,10 +144,34 @@ static int virt_dir_unlink(struct hexagonfs_fd *dir, const char *name)
 	free(p); return r;
 }
 
+static int virt_dir_readdir(struct hexagonfs_fd *fd, size_t size, char *out)
+{
+	struct virt_dir_ctx *ctx = fd->data;
+	const struct hexagonfs_dirent *ent;
+
+	if (ctx->dirlist == NULL) {
+		out[0] = '\0';
+		return 0;
+	}
+
+	/* find the child at current index, advance */
+	ent = ctx->dirlist[ctx->readdir_index];
+	if (ent == NULL) {
+		out[0] = '\0';
+		return 0;
+	}
+
+	strncpy(out, ent->name, size);
+	out[size - 1] = '\0';
+	ctx->readdir_index++;
+	return 0;
+}
+
 struct hexagonfs_file_ops hexagonfs_virt_dir_ops = {
 	.close = virt_dir_close,
 	.from_dirent = virt_dir_from_dirent,
 	.openat = virt_dir_openat,
+	.readdir = virt_dir_readdir,
 	.stat = virt_dir_stat,
 	.mkdir = virt_dir_mkdir,
 	.rmdir = virt_dir_rmdir,

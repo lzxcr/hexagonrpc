@@ -41,6 +41,7 @@
 #include "hexagonfs.h"
 #include "interfaces/adsp_default_listener.def"
 #include "listener.h"
+#include "config.h"
 #include "localctl.h"
 #include "rpcd_builder.h"
 
@@ -74,7 +75,8 @@ static void print_usage(const char *argv0)
 	printf("Usage: %s [options] -f DEVICE\n\n", argv0);
 	printf("Server for FastRPC remote procedure calls from Qualcomm DSPs\n\n"
 	       "Options:\n"
-	       "\t-c SHELL\t\tCreate a new pd running the specified ELF\n"
+	       "\t-a STATICPD\tCreate a named static PD (INIT_CREATE_STATIC)\n"
+	       "\t-c SHELL\tCreate a new pd running the specified ELF\n"
 	       "\t-d DSP\t\tDSP name (default: "")\n"
 	       "\t-f DEVICE\tFastRPC device node to attach to\n"
 	       "\t-p PROGRAM\tRun client program with shared file descriptor\n"
@@ -136,6 +138,17 @@ err_close_fd:
 	return ret;
 }
 
+static int create_static_pd(int fd, const char *name)
+{
+	struct fastrpc_init_create_static init = {
+		.namelen = strlen(name),
+		.memlen = 3 * 1024 * 1024,
+		.name = (__u64)name,
+	};
+
+	return ioctl(fd, FASTRPC_IOCTL_INIT_CREATE_STATIC, &init);
+}
+
 static int setup_environment(int fd)
 {
 	char *buf;
@@ -189,7 +202,7 @@ static int start_clients(size_t n_progs, const char **progs, pid_t *pids)
 	return 0;
 }
 
-static void *start_reverse_tunnel(int fd, const char *device_dir, const char *dsp)
+static void *start_reverse_tunnel(int fd, const char *device_dir, const char *dsp, struct hexagonrpc_config *cfg)
 {
 	struct fastrpc_interface **ifaces;
 	struct hexagonfs_dirent *root_dir;
@@ -200,7 +213,7 @@ static void *start_reverse_tunnel(int fd, const char *device_dir, const char *ds
 	if (ifaces == NULL)
 		return NULL;
 
-	root_dir = construct_root_dir_with_prefix(device_dir, dsp);
+	root_dir = construct_root_dir_with_prefix(device_dir, dsp, cfg);
 
 	/*
 	 * The apps_remotectl interface patiently waits for this function to
@@ -351,12 +364,14 @@ int main(int argc, char* argv[])
 	const char *device_dir = "/usr/share/qcom/";
 	const char *dsp = "";
 	const char *create_shell = NULL;
+	const char *static_pd = NULL;
 	const char *guessed_device_dir;
 	const char **progs;
 	pid_t *pids;
 	size_t n_progs = 0;
 	int fd, ret, opt;
 	bool attach_sns = false;
+	struct hexagonrpc_config *cfg = NULL;
 
 	progs = malloc(sizeof(const char *) * argc);
 	if (progs == NULL) {
@@ -374,9 +389,11 @@ int main(int argc, char* argv[])
 	if (guessed_device_dir != NULL)
 		device_dir = guessed_device_dir;
 
-	while ((opt = getopt(argc, argv, "c:d:f:p:R:s")) != -1) {
+	while ((opt = getopt(argc, argv, "a:c:d:f:p:R:s")) != -1) {
 		switch (opt) {
-			case 'c':
+		case 'a':
+			static_pd = optarg;
+			break;
 				create_shell = optarg;
 				break;
 			case 'd':
@@ -416,6 +433,8 @@ int main(int argc, char* argv[])
 
 	if (attach_sns)
 		ret = ioctl(fd, FASTRPC_IOCTL_INIT_ATTACH_SNS, NULL);
+	else if (static_pd != NULL)
+		ret = create_static_pd(fd, static_pd);
 	else if (create_shell != NULL)
 		ret = create_shell_pd(fd, create_shell);
 	else
@@ -435,7 +454,9 @@ int main(int argc, char* argv[])
 	if (ret)
 		goto err_close_dev;
 
-	start_reverse_tunnel(fd, device_dir, dsp);
+		cfg = hexagonrpc_config_load(device_dir);
+	start_reverse_tunnel(fd, device_dir, dsp, cfg);
+	hexagonrpc_config_free(cfg);
 
 	terminate_clients(n_progs, pids);
 

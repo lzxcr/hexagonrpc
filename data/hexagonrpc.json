@@ -1,0 +1,17 @@
+{
+    "_comment": "HexagonFS path mappings. Edit to match your device.",
+    "path_mappings": [
+        {
+            "virtual": "/vendor/etc",
+            "physical": "/etc/"
+        },
+        {
+            "virtual": "/persist",
+            "physical": "/persist/"
+        },
+        {
+            "virtual": "/sys/devices/soc0",
+            "physical": "/socinfo/"
+        }
+    ]
+}

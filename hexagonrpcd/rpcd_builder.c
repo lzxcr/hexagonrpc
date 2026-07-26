@@ -1,239 +1,176 @@
 /*
- * FastRPC virtual filesystem builder
+ * HexagonFS virtual filesystem builder — builds tree from config mappings
  *
- * Copyright (C) 2023-2025 The HexagonRPC Contributors
+ * path_mappings in hexagonrpc.json define how DSP virtual paths map to
+ * physical filesystem paths under the -R root directory.
  *
- * This file is part of HexagonRPC.
+ * Example hexagonrpc.json:
+ *   { "path_mappings": [
+ *       {"virtual": "/vendor/etc", "physical": "/etc/"},
+ *       {"virtual": "/persist",    "physical": "/persist/"},
+ *       {"virtual": "/sys/devices/soc0", "physical": "/socinfo/"}
+ *   ]}
  *
- * HexagonRPC is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
-
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "hexagonfs.h"
+#include "config.h"
 
-// These paths are relative, with a prepended '/' if missing from previous segments
-#define ACDBDATA		"/acdb/"
-#define DSP_LIBS		"/dsp/"
-#define SENSORS_CONFIG		"/sensors/config/"
-#define SENSORS_REGISTRY	"/sensors/registry/"
-#define SNS_REG_CONFIG		"/sensors/sns_reg.conf"
-#define SYSFS_SOCINFO		"/socinfo/"
-
-static struct hexagonfs_dirent *hfs_mkdir(const char *name, size_t n_ents, ...)
+static struct hexagonfs_dirent *hfs_leaf(const char *name, const char *phys)
 {
-	struct hexagonfs_dirent *dir;
-	struct hexagonfs_dirent **list;
-	struct hexagonfs_dirent *ent;
-	va_list va;
-	size_t i;
+	struct hexagonfs_dirent *f = malloc(sizeof(*f));
+	if (!f) return NULL;
+	f->name = strdup(name);
+	f->ops = &hexagonfs_mapped_ops;
+	f->u.phys = phys;
+	return f;
+}
 
-	list = malloc(sizeof(struct hexagonfs_dirent *) * (n_ents + 1));
-	if (list == NULL)
+/* Find a child by name, or NULL */
+static struct hexagonfs_dirent *find_child(struct hexagonfs_dirent *dir,
+					   const char *name)
+{
+	if (dir->ops != &hexagonfs_virt_dir_ops)
 		return NULL;
-
-	dir = malloc(sizeof(struct hexagonfs_dirent));
-	if (dir == NULL)
-		goto err_free_list;
-
-	va_start(va, n_ents);
-	for (i = 0; i < n_ents; i++) {
-		ent = va_arg(va, struct hexagonfs_dirent *);
-		if (ent == NULL)
-			goto err_free_dir;
-
-		list[i] = ent;
-	}
-	va_end(va);
-
-	list[n_ents] = NULL;
-
-	dir->name = name;
-	dir->ops = &hexagonfs_virt_dir_ops;
-	dir->u.dir = list;
-
-	return dir;
-
-err_free_dir:
-	free(dir);
-err_free_list:
-	free(list);
+	for (struct hexagonfs_dirent **c = dir->u.dir; c && *c; c++)
+		if (!strcmp((*c)->name, name))
+			return *c;
 	return NULL;
 }
 
-static struct hexagonfs_dirent *hfs_map(const char *name, const char *path)
+/* Append a new virt_dir child */
+static struct hexagonfs_dirent *add_dir(struct hexagonfs_dirent *dir,
+					const char *name)
 {
-	struct hexagonfs_dirent *file;
+	int n = 0;
+	struct hexagonfs_dirent *child;
 
-	file = malloc(sizeof(struct hexagonfs_dirent));
-	if (file == NULL)
-		return NULL;
+	/* Find existing child first */
+	child = find_child(dir, name);
+	if (child) return child;
 
-	file->name = name;
-	file->ops = &hexagonfs_mapped_ops;
-	file->u.phys = path;
+	/* Count existing children */
+	for (struct hexagonfs_dirent **c = dir->u.dir; c && *c; c++)
+		n++;
 
-	return file;
-}
+	/* Realloc to add one more */
+	struct hexagonfs_dirent **newlist = realloc(dir->u.dir,
+		(n + 2) * sizeof(void*));
+	if (!newlist) return NULL;
 
-static struct hexagonfs_dirent *hfs_map_or_empty(const char *name, const char *path)
-{
-	struct hexagonfs_dirent *file;
+	newlist[n] = calloc(1, sizeof(struct hexagonfs_dirent));
+	if (!newlist[n]) return NULL;
+	newlist[n]->name = strdup(name);
+	newlist[n]->ops = &hexagonfs_virt_dir_ops;
+	newlist[n]->u.dir = calloc(1, sizeof(void*));
+	newlist[n+1] = NULL;
 
-	file = malloc(sizeof(struct hexagonfs_dirent));
-	if (file == NULL)
-		return NULL;
-
-	file->name = name;
-	file->ops = &hexagonfs_mapped_or_empty_ops;
-	file->u.phys = path;
-
-	return file;
-}
-
-/*
- * Construct the root directory
- *
- * TODO: Make this free()-able with reference counts
- */
-struct hexagonfs_dirent *construct_root_dir(const char *prefix, const char *dsp)
-{
-	char *acdbdata, *dsp_libs, *sns_cfg, *sns_reg, *sns_reg_config, *socinfo;
-	size_t n_prefix;
-	struct hexagonfs_dirent *persist_dir, *vendor_dir;
-
-	n_prefix = strlen(prefix);
-
-	acdbdata = malloc(n_prefix + strlen(ACDBDATA) + 1);
-	sns_cfg = malloc(n_prefix + strlen(SENSORS_CONFIG) + 1);
-	sns_reg = malloc(n_prefix + strlen(SENSORS_REGISTRY) + 1);
-	sns_reg_config = malloc(n_prefix + strlen(SNS_REG_CONFIG) + 1);
-	socinfo = malloc(n_prefix + strlen(SYSFS_SOCINFO) + 1);
-
-	dsp_libs = malloc(n_prefix + strlen(DSP_LIBS) + strlen(dsp) + 1);
-
-	if (acdbdata != NULL) {
-		strcpy(acdbdata, prefix);
-		strcat(acdbdata, ACDBDATA);
-	}
-
-	if (sns_cfg != NULL) {
-		strcpy(sns_cfg, prefix);
-		strcat(sns_cfg, SENSORS_CONFIG);
-	}
-
-	if (sns_reg != NULL) {
-		strcpy(sns_reg, prefix);
-		strcat(sns_reg, SENSORS_REGISTRY);
-	}
-
-	if (sns_reg_config != NULL) {
-		strcpy(sns_reg_config, prefix);
-		strcat(sns_reg_config, SNS_REG_CONFIG);
-	}
-
-	if (socinfo != NULL) {
-		strcpy(socinfo, prefix);
-		strcat(socinfo, SYSFS_SOCINFO);
-	}
-
-	if (dsp_libs != NULL) {
-		strcpy(dsp_libs, prefix);
-		strcat(dsp_libs, DSP_LIBS);
-		strcat(dsp_libs, dsp);
-	}
-
-	/*
-	 * Some platforms need this in / and some need it in /mnt/vendor. Form
-	 * a hard link between both locations.
-	 */
-	persist_dir = hfs_mkdir("persist", 1,
-				hfs_mkdir("sensors", 1,
-					hfs_mkdir("registry", 1,
-						hfs_map("registry", sns_reg)
-					)
-				)
-		      );
-
-	/*
-	 * Some platforms need vendor in / and some need it in /system. Form
-	 * a hard link between both locations.
-	 */
-	vendor_dir = hfs_mkdir("vendor", 1,
-				hfs_mkdir("etc", 2,
-					hfs_mkdir("sensors", 2,
-						hfs_map_or_empty("config", sns_cfg),
-						hfs_map("sns_reg_config", sns_reg_config)
-					),
-					hfs_map("acdbdata", acdbdata)
-				)
-			);
-
-	return hfs_mkdir("/", 6,
-			hfs_mkdir("mnt", 1,
-				hfs_mkdir("vendor", 1,
-					persist_dir
-				)
-			),
-			persist_dir,
-			hfs_mkdir("sys", 1,
-				hfs_mkdir("devices", 1,
-					hfs_map_or_empty("soc0", socinfo)
-				)
-			),
-			hfs_mkdir("system", 1,
-				vendor_dir
-			),
-			hfs_mkdir("usr", 1,
-				hfs_mkdir("lib", 1,
-					hfs_mkdir("qcom", 1,
-						hfs_map_or_empty("adsp", dsp_libs)
-					)
-				)
-			),
-			vendor_dir
-		);
+	dir->u.dir = newlist;
+	return newlist[n];
 }
 
 /*
- * Wrap a root dirent so virt_dir_from_dirent can extract the
- * physical root path for mkdir/rmdir/unlink operations.
+ * Build tree from config: walk each mapping, create virt_dir chain,
+ * attach mapped leaf at the end.
  */
-struct hexagonfs_dirent *construct_root_dir_with_prefix(const char *prefix, const char *dsp)
+static struct hexagonfs_dirent *build_root(const char *prefix,
+					   const struct hexagonrpc_config *cfg)
 {
-	struct hexagonfs_dirent *root = construct_root_dir(prefix, dsp);
+	struct hexagonfs_dirent *root;
+	char *name_copy;
+	const char *root_path = prefix ? prefix : "";
+
+	root = calloc(1, sizeof(*root));
+	if (!root) return NULL;
+	root->name = "/";
+	root->ops = &hexagonfs_virt_dir_ops;
+	root->u.dir = calloc(1, sizeof(void*));
+
+	if (!cfg || !cfg->mappings)
+		return root;
+
+	for (size_t i = 0; i < cfg->n_mappings; i++) {
+		const char *virt = cfg->mappings[i].virtual_path;
+		const char *phys = cfg->mappings[i].physical_path;
+		if (!virt || !phys) continue;
+
+		/* Skip leading / */
+		while (*virt == '/') virt++;
+
+		name_copy = strdup(virt);
+		if (!name_copy) continue;
+
+		/* Tokenize and walk/create path */
+		struct hexagonfs_dirent *cur = root;
+		char *seg = strtok(name_copy, "/"), *phys_copy = NULL;
+		while (seg) {
+			char *next = strtok(NULL, "/");
+			if (next) {
+				/* Intermediate segment: ensure virt_dir exists */
+				struct hexagonfs_dirent *d = add_dir(cur, seg);
+				if (!d) break;
+				cur = d;
+			} else {
+				/* Leaf segment: attach mapped entry */
+				phys_copy = malloc(strlen(root_path) +
+						   strlen(phys) + 1);
+				if (!phys_copy) break;
+				strcpy(phys_copy, root_path);
+				strcat(phys_copy, phys);
+
+				/* Check if this name already exists as a child */
+				struct hexagonfs_dirent *existing = find_child(cur, seg);
+				if (!existing) {
+					/* Need to append a mapped leaf */
+					int n = 0;
+					for (struct hexagonfs_dirent **c = cur->u.dir; c && *c; c++)
+						n++;
+					struct hexagonfs_dirent **nl = realloc(cur->u.dir,
+						(n + 2) * sizeof(void*));
+					if (!nl) { free(phys_copy); break; }
+					nl[n] = hfs_leaf(seg, phys_copy);
+					if (!nl[n]) { free(phys_copy); break; }
+					nl[n+1] = NULL;
+					cur->u.dir = nl;
+				} else {
+					/* Already exists — replace or leave */
+					free(phys_copy);
+				}
+			}
+			seg = next;
+		}
+		free(name_copy);
+	}
+	return root;
+}
+
+struct hexagonfs_dirent *construct_root_dir(const char *prefix,
+					    const char *dsp,
+					    const struct hexagonrpc_config *cfg)
+{
+	(void)dsp;
+	return build_root(prefix, cfg);
+}
+
+struct hexagonfs_dirent *construct_root_dir_with_prefix(const char *prefix,
+							const char *dsp,
+							const struct hexagonrpc_config *cfg)
+{
+	struct hexagonfs_dirent *root = construct_root_dir(prefix, dsp, cfg);
 	struct virt_dir_dirent_data *root_data;
 
-	if (root == NULL)
-		return NULL;
+	if (!root) return NULL;
 
-	/*
-	 * Replace the root dirent's u.dir with a virt_dir_dirent_data
-	 * that carries the physical root path. The virt_dir ops extract
-	 * this pointer as dirent_data and use it to resolve physical paths.
-	 */
 	root_data = malloc(sizeof(*root_data));
-	if (root_data == NULL) {
-		/* root is leaked, but construct_root_dir doesn't have a free path */
-		return root;
-	}
+	if (!root_data) return root;
 
 	root_data->root_path = prefix;
 	root_data->dirlist = (const struct hexagonfs_dirent *const *)root->u.dir;
 	root->u.ptr = root_data;
-
 	return root;
 }

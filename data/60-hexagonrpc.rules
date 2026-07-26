@@ -1,4 +1,7 @@
-# ADSP — triggers rootpd, audiopd, and sensorspd concurrently
+# ADSP — rootpd + sensorspd + audiopd
+# Note: audiopd requires the kernel to support INIT_CREATE_STATIC by PD name.
+# On mainline Linux, this may not be available. The service will fail if the
+# kernel does not support this ioctl — in that case, disable it manually.
 ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-adsp",         OWNER="root", GROUP="hexagonrpc", MODE="0660", TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-audiopd.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-sensorspd.service"
 ACTION=="add", SUBSYSTEM=="misc", KERNEL=="fastrpc-adsp-secure",  TAG+="systemd", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-audiopd.service", ENV{SYSTEMD_WANTS}+="hexagonrpcd-adsp-sensorspd.service"
 
