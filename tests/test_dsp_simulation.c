@@ -53,9 +53,9 @@ int main(int argc, char **argv) {
     /* Build HexagonFS */
     struct hexagonfs_fd *fds[256]={0};
     struct hexagonrpc_path_mapping tmaps[]={
-            {"/vendor/etc","/etc/"},
-            {"/persist","/persist/"},
-            {"/sys/devices/soc0","/socinfo/"}};
+            {"/vendor/etc","etc/"},
+            {"/persist","persist/"},
+            {"/sys/devices/soc0","socinfo/"}};
     struct hexagonrpc_config test_cfg={.root_path=NULL,.mappings=tmaps,.n_mappings=3};
     struct hexagonfs_dirent *rt=construct_root_dir_with_prefix(root,"adsp",&test_cfg);
     int rf=hexagonfs_open_root(fds,rt);

@@ -11,6 +11,7 @@ Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=2
 RestartForceExitStatus=SIGTERM
+RestartPreventExitStatus=4
 User=hexagonrpc
 Group=hexagonrpc
 

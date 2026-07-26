@@ -52,6 +52,9 @@ static uint32_t apps_std_fopen(void *data,
 			       const struct fastrpc_io_buffer *inbufs,
 			       struct fastrpc_io_buffer *outbufs)
 {
+	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
+		return AEE_EBADPARM;
+
 	struct apps_std_ctx *ctx = data;
 	uint32_t *out = outbufs[0].p;
 	int fd;
@@ -568,6 +571,9 @@ static uint32_t apps_std_fopen_fd(void *data,
 				  const struct fastrpc_io_buffer *inbufs,
 				  struct fastrpc_io_buffer *outbufs)
 {
+	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
+		return AEE_EBADPARM;
+
 	struct apps_std_ctx *ctx = data;
 	/* inbufs[0] = prim: [name_len, mode_len]
 	 * inbufs[1] = name, inbufs[2] = mode
@@ -617,6 +623,9 @@ static uint32_t apps_std_fopen_with_env_fd(void *data,
 					   const struct fastrpc_io_buffer *inbufs,
 					   struct fastrpc_io_buffer *outbufs)
 {
+	if (inbufs[1].s == 0 || ((const char *)inbufs[1].p)[0] == 0)
+		return AEE_EBADPARM;
+
 	struct apps_std_ctx *ctx = data;
 	/* inbufs[0] = prim: [envvar_len, delim_len, name_len, mode_len]
 	 * inbufs[1] = envvar, inbufs[2] = delim

@@ -1,21 +1,21 @@
 {
-    "_comment": "HexagonFS path mappings. Edit to match your device.",
+    "_comment": "Physical paths are subdirectories relative to the -R root.",
     "path_mappings": [
         {
             "virtual": "/vendor/etc",
-            "physical": "/etc/"
+            "physical": "etc/"
         },
         {
-            "virtual": "/vendor/etc/acdbdata",
-            "physical": "/etc/"
+            "virtual": "/usr/lib/qcom/adsp",
+            "physical": "etc/"
         },
         {
             "virtual": "/persist",
-            "physical": "/persist/"
+            "physical": "persist/"
         },
         {
             "virtual": "/sys/devices/soc0",
-            "physical": "/socinfo/"
+            "physical": "socinfo/"
         }
     ]
 }

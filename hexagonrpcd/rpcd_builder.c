@@ -118,10 +118,18 @@ static struct hexagonfs_dirent *build_root(const char *prefix,
 			} else {
 				/* Leaf segment: attach mapped entry */
 				phys_copy = malloc(strlen(root_path) +
-						   strlen(phys) + 1);
+						   strlen(phys) + 2);
 				if (!phys_copy) break;
-				strcpy(phys_copy, root_path);
-				strcat(phys_copy, phys);
+				if (phys[0] == '/') {
+					/* Absolute path: use as-is */
+					strcpy(phys_copy, phys);
+				} else {
+					/* Relative: prepend root_path + / */
+					strcpy(phys_copy, root_path);
+					if (phys_copy[strlen(phys_copy) - 1] != '/')
+						strcat(phys_copy, "/");
+					strcat(phys_copy, phys);
+				}
 
 				/* Check if this name already exists as a child */
 				struct hexagonfs_dirent *existing = find_child(cur, seg);

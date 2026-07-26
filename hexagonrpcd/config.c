@@ -9,17 +9,14 @@ struct hexagonrpc_config *hexagonrpc_config_load(const char *root_path) {
 	struct hexagonrpc_config *cfg;
 	struct json_object *root, *obj;
 	char *path;
-	int len;
 
 	cfg = calloc(1, sizeof(*cfg));
 	if (!cfg) return NULL;
 
 	cfg->root_path = root_path ? strdup(root_path) : NULL;
 
-	len = (root_path ? strlen(root_path) : 0) + 32;
-	path = malloc(len);
+	path = strdup("/usr/share/qcom/conf.d/hexagonrpc.json");
 	if (!path) goto out;
-	snprintf(path, len, "%s/hexagonrpc.json", root_path ? root_path : ".");
 
 	root = json_object_from_file(path);
 	free(path);

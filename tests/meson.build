@@ -1,16 +1,13 @@
 valgrind = find_program('valgrind', required : false)
-
 if valgrind.found()
   add_test_setup('valgrind', exe_wrapper : valgrind)
 endif
-
 test_iobuffer = executable('test_iobuffer',
   'test_iobuffer.c',
   '../hexagonrpcd/iobuffer.c',
   c_args : cflags,
   include_directories : include,
 )
-
 sample_file = custom_target('sample_file',
   input : 'sample_file.txt',
   output : 'sample_file.txt',
@@ -23,10 +20,8 @@ test_hexagonfs = executable('test_hexagonfs',
   c_args : cflags,
   include_directories : include,
 )
-
 test('iobuffer', test_iobuffer)
 test('hexagonfs', test_hexagonfs, args : [sample_file])
-
 test_dsp_sim = executable('test_dsp_simulation',
   'test_dsp_simulation.c',
   '../hexagonrpcd/hexagonfs.c',
@@ -37,3 +32,16 @@ test_dsp_sim = executable('test_dsp_simulation',
   include_directories : include,
 )
 test('dsp-simulation', test_dsp_sim, timeout : 30)
+
+test_config = executable('test_config',
+  'test_config.c',
+  '../hexagonrpcd/hexagonfs.c',
+  '../hexagonrpcd/hexagonfs_mapped.c',
+  '../hexagonrpcd/hexagonfs_virt_dir.c',
+  '../hexagonrpcd/rpcd_builder.c',
+  '../hexagonrpcd/config.c',
+  c_args : cflags,
+  include_directories : include,
+  dependencies : json_c,
+  build_by_default : false,
+)

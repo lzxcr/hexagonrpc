@@ -31,5 +31,5 @@ install_data(
 # Example config — copy to {root}/hexagonrpc.json and customize
 install_data(
   'hexagonrpc.json',
-  install_dir: get_option('datadir') / 'doc/hexagonrpc/examples',
+  install_dir: '/usr/share/qcom/conf.d',
 )
