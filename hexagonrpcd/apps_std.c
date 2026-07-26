@@ -68,6 +68,8 @@ static uint32_t apps_std_fopen(void *data,
 		return AEE_EBADPARM;
 
 	/* Try searching from the library path first, then root */
+	fprintf(stderr, "  [fopen] trying %s (libfd=%d)\n",
+		(const char*)inbufs[1].p, ctx->adsp_library_dirfd);
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd,
 			      ctx->adsp_library_dirfd, inbufs[1].p);
 	if (fd < 0) {
@@ -241,6 +243,8 @@ static uint32_t apps_std_fopen_with_env(void *data,
 	if (dirfd < 0)
 		dirfd = ctx->rootfd;
 
+	fprintf(stderr, "  [fopen_env] %s via %s (dirfd=%d)\n",
+		(const char *)inbufs[3].p, (const char *)inbufs[1].p, dirfd);
 	fd = hexagonfs_openat(ctx->fds, ctx->rootfd, dirfd, inbufs[3].p);
 	if (fd < 0) {
 		fprintf(stderr, "File not found: %s\n",
