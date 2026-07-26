@@ -423,7 +423,11 @@ int main(int argc, char* argv[])
 		goto err_free_pids;
 	}
 
-	printf("Starting %s (%s) on %s\n", argv[0], attach_sns? "INIT_ATTACH_SNS": "INIT_ATTACH", fastrpc_node);
+	const char *mode = "INIT_ATTACH";
+	if (attach_sns) mode = "INIT_ATTACH_SNS";
+	else if (static_pd) mode = "INIT_CREATE_STATIC";
+
+	printf("Starting %s (%s) on %s\n", argv[0], mode, fastrpc_node);
 
 	fd = open(fastrpc_node, O_RDWR);
 	if (fd < 0) {
@@ -440,7 +444,8 @@ int main(int argc, char* argv[])
 	else
 		ret = ioctl(fd, FASTRPC_IOCTL_INIT_ATTACH, NULL);
 	if (ret) {
-		fprintf(stderr, "Could not attach to FastRPC node: %s\n", strerror(errno));
+		fprintf(stderr, "Could not attach to FastRPC node: ioctl returned %d, errno=%d (%s)\n",
+			ret, errno, strerror(errno));
 		goto err_close_dev;
 	}
 
