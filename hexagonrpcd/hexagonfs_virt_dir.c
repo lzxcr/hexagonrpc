@@ -38,7 +38,7 @@ static int virt_dir_from_dirent(const void *dirent_data, bool dir, void **fd_dat
 	const struct virt_dir_dirent_data *dd = dirent_data;
 	struct virt_dir_ctx *ctx;
 
-	ctx = malloc(sizeof(*ctx));
+	ctx = calloc(1, sizeof(*ctx));
 	if (ctx == NULL)
 		return -ENOMEM;
 
@@ -66,8 +66,7 @@ static int virt_dir_openat(struct hexagonfs_fd *dir,
 	if (fd == NULL)
 		return -ENOMEM;
 
-	fd->is_assigned = false;
-	fd->up = dir;
+	fd->refcount = 1;
 	fd->ops = ent->ops;
 
 	/*
@@ -104,7 +103,7 @@ static void virt_dir_close(void *fd_data)
 static int virt_dir_stat(struct hexagonfs_fd *fd, struct stat *stats)
 {
 	memset(stats, 0, sizeof(*stats));
-	stats->st_mode = S_IRUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+	stats->st_mode = S_IFDIR | S_IRUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
 	return 0;
 }
 
@@ -112,11 +111,17 @@ static int make_phys(struct virt_dir_ctx *ctx, const char *name, char **out)
 {
 	if (!ctx->root_path)
 		return -ENOSYS;
+
+	/* Validate name: reject empty, ".", "..", and anything containing '/' */
+	if (!name[0] || !strcmp(name, ".") || !strcmp(name, "..")
+	    || strchr(name, '/'))
+		return -EINVAL;
+
 	size_t len = strlen(ctx->root_path) + 1 + strlen(name) + 1;
 	*out = malloc(len);
 	if (!*out)
 		return -ENOMEM;
-	sprintf(*out, "%s/%s", ctx->root_path, name);
+	snprintf(*out, len, "%s/%s", ctx->root_path, name);
 	return 0;
 }
 
@@ -160,6 +165,9 @@ static int virt_dir_readdir(struct hexagonfs_fd *fd, size_t size, char *out)
 		out[0] = '\0';
 		return 0;
 	}
+
+	if (!size)
+		return -EINVAL;
 
 	strncpy(out, ent->name, size);
 	out[size - 1] = '\0';

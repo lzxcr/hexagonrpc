@@ -30,7 +30,7 @@
 static int test_mapped_seq_read(const char *path)
 {
 	struct hexagonfs_fd file = {
-		.is_assigned = true,
+		.refcount = 1,
 		.up = NULL,
 		.ops = &hexagonfs_mapped_ops,
 	};

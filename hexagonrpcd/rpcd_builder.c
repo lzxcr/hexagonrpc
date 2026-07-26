@@ -26,6 +26,10 @@ static struct hexagonfs_dirent *hfs_leaf(const char *name, const char *phys)
 	struct hexagonfs_dirent *f = malloc(sizeof(*f));
 	if (!f) return NULL;
 	f->name = strdup(name);
+	if (!f->name) {
+		free(f);
+		return NULL;
+	}
 	f->ops = &hexagonfs_mapped_ops;
 	f->u.phys = phys;
 	return f;
@@ -60,17 +64,30 @@ static struct hexagonfs_dirent *add_dir(struct hexagonfs_dirent *dir,
 
 	/* Realloc to add one more */
 	struct hexagonfs_dirent **newlist = realloc(dir->u.dir,
-		(n + 2) * sizeof(void*));
+		(n + 2) * sizeof(*newlist));
 	if (!newlist) return NULL;
+	dir->u.dir = newlist;
 
-	newlist[n] = calloc(1, sizeof(struct hexagonfs_dirent));
-	if (!newlist[n]) return NULL;
-	newlist[n]->name = strdup(name);
-	newlist[n]->ops = &hexagonfs_virt_dir_ops;
-	newlist[n]->u.dir = calloc(1, sizeof(void*));
+	
+
+	struct hexagonfs_dirent *node = calloc(1, sizeof(*node));
+	if (!node) return NULL;
+
+	node->name = strdup(name);
+	if (!node->name) {
+		free(node);
+		return NULL;
+	}
+	node->ops = &hexagonfs_virt_dir_ops;
+	node->u.dir = calloc(1, sizeof(void*));
+	if (!node->u.dir) {
+		free(node->name);
+		free(node);
+		return NULL;
+	}
+	newlist[n] = node;
 	newlist[n+1] = NULL;
 
-	dir->u.dir = newlist;
 	return newlist[n];
 }
 
@@ -87,7 +104,7 @@ static struct hexagonfs_dirent *build_root(const char *prefix,
 
 	root = calloc(1, sizeof(*root));
 	if (!root) return NULL;
-	root->name = "/";
+	root->name = strdup("/");
 	root->ops = &hexagonfs_virt_dir_ops;
 	root->u.dir = calloc(1, sizeof(void*));
 
@@ -121,14 +138,13 @@ static struct hexagonfs_dirent *build_root(const char *prefix,
 						   strlen(phys) + 2);
 				if (!phys_copy) break;
 				if (phys[0] == '/') {
-					/* Absolute path: use as-is */
 					strcpy(phys_copy, phys);
 				} else {
-					/* Relative: prepend root_path + / */
-					strcpy(phys_copy, root_path);
-					if (phys_copy[strlen(phys_copy) - 1] != '/')
-						strcat(phys_copy, "/");
-					strcat(phys_copy, phys);
+					size_t rlen = strlen(root_path);
+					memcpy(phys_copy, root_path, rlen);
+					if (rlen > 0 && phys_copy[rlen - 1] != '/')
+						phys_copy[rlen++] = '/';
+					strcpy(phys_copy + rlen, phys);
 				}
 
 				/* Check if this name already exists as a child */
@@ -139,12 +155,12 @@ static struct hexagonfs_dirent *build_root(const char *prefix,
 					for (struct hexagonfs_dirent **c = cur->u.dir; c && *c; c++)
 						n++;
 					struct hexagonfs_dirent **nl = realloc(cur->u.dir,
-						(n + 2) * sizeof(void*));
+						(n + 2) * sizeof(*nl));
 					if (!nl) { free(phys_copy); break; }
-					nl[n] = hfs_leaf(seg, phys_copy);
-					if (!nl[n]) { free(phys_copy); break; }
-					nl[n+1] = NULL;
 					cur->u.dir = nl;
+					nl[n] = hfs_leaf(seg, phys_copy);
+					if (!nl[n]) { free(phys_copy); nl[n] = NULL; break; }
+					nl[n+1] = NULL;
 				} else {
 					/* Already exists — replace or leave */
 					free(phys_copy);
@@ -177,7 +193,7 @@ struct hexagonfs_dirent *construct_root_dir_with_prefix(const char *prefix,
 	root_data = malloc(sizeof(*root_data));
 	if (!root_data) return root;
 
-	root_data->root_path = prefix;
+	root_data->root_path = strdup(prefix ? prefix : "");
 	root_data->dirlist = (const struct hexagonfs_dirent *const *)root->u.dir;
 	root->u.ptr = root_data;
 	return root;

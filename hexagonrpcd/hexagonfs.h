@@ -63,7 +63,7 @@ struct hexagonfs_dirent {
 };
 
 struct hexagonfs_fd {
-	bool is_assigned;
+	unsigned int refcount;
 	struct hexagonfs_fd *up;
 	void *data;
 

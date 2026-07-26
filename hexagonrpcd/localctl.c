@@ -64,7 +64,15 @@ static uint32_t localctl_open(void *data,
 	struct remotectl_open_return *first_out = outbufs[0].p;
 	size_t i;
 
-	if (((const char *) inbufs[1].p)[inbufs[1].s - 1] != 0)
+	if (inbufs[1].s == 0
+	    || ((const char *)inbufs[1].p)[inbufs[1].s - 1] != 0)
+		return AEE_EBADPARM;
+
+	if (inbufs[0].s < sizeof(*first_in)
+	    || outbufs[0].s < sizeof(*first_out))
+		return AEE_EBADPARM;
+
+	if (first_in->outlen > outbufs[1].s)
 		return AEE_EBADPARM;
 
 	memset(outbufs[1].p, 0, first_in->outlen);
@@ -99,10 +107,18 @@ static uint32_t localctl_close(void *data,
 	uint32_t *dlerr_size = inbufs[0].p;
 	uint32_t *dlerr_len = outbufs[0].p;
 
+	if (inbufs[0].s < sizeof(*dlerr_size)
+	    || outbufs[0].s < sizeof(*dlerr_len))
+		return AEE_EBADPARM;
+
+	if (*dlerr_size > outbufs[1].s)
+		return AEE_EBADPARM;
+
 	memset(outbufs[1].p, 0, *dlerr_size);
 
 	*dlerr_len = 0;
 
+	(void)data;
 	return 0;
 }
 

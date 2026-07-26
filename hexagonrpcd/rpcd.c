@@ -121,7 +121,12 @@ static int create_shell_pd(int fd, const char *create_shell)
 		goto err_close_dmabuf;
 	}
 
-		if ((off_t)read(shellfd, buf, stats.st_size) != stats.st_size) { close(shellfd); free(buf); return 1; }
+	if ((off_t)read(shellfd, buf, stats.st_size) != stats.st_size) {
+		close(shellfd);
+		munmap(buf, dmabuf.size);
+		close(dmabuf.fd);
+		return 1;
+	}
 
 	init.file = (__u64) buf;
 	init.filefd = dmabuf.fd;
@@ -209,7 +214,7 @@ static void *start_reverse_tunnel(int fd, const char *device_dir, const char *ds
 	size_t n_ifaces = 3;
 	int ret;
 
-	ifaces = malloc(sizeof(struct fastrpc_interface) * n_ifaces);
+	ifaces = malloc(sizeof(*ifaces) * n_ifaces);
 	if (ifaces == NULL)
 		return NULL;
 
@@ -257,12 +262,20 @@ static char *read_sysfs_file(const char *path, struct stat *file_stat)
 	if (res)
 		goto close_fd;
 
-	contents = malloc(file_stat->st_size);
+	contents = malloc(file_stat->st_size + 1);
 	if (contents == NULL)
 		goto close_fd;
 
-	n_bytes = read(fd, contents, file_stat->st_size);
-	if (n_bytes != file_stat->st_size) {
+	/* Loop read: short reads are valid on Linux sysfs */
+	n_bytes = 0;
+	while (n_bytes < (int)file_stat->st_size) {
+		ssize_t n = read(fd, contents + n_bytes,
+				 file_stat->st_size - n_bytes);
+		if (n <= 0)
+			break;
+		n_bytes += n;
+	}
+	if (n_bytes != (int)file_stat->st_size) {
 		free(contents);
 		contents = NULL;
 	}
@@ -332,8 +345,10 @@ static char *guess_device_directory_from_compatible(void)
 		char *try_path = NULL;
 
 		device_name = strchr(compatible_ptr, ',');
-		if (device_name == NULL)
+		if (device_name == NULL) {
+			compatible_ptr += strlen(compatible_ptr) + 1;
 			continue;
+		}
 		device_name += 1;
 
 		if (asprintf(&try_path, "/usr/share/qcom/%s/%s/%s",
@@ -396,9 +411,10 @@ int main(int argc, char* argv[])
 		case 'a':
 			static_pd = optarg;
 			break;
-				create_shell = optarg;
-				break;
-			case 'd':
+		case 'c':
+			create_shell = optarg;
+			break;
+		case 'd':
 				dsp = optarg;
 				break;
 			case 'f':

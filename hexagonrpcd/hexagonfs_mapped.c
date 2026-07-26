@@ -51,7 +51,7 @@ static void mapped_close(void *fd_data)
 
 static int mapped_open_path(const char *name, bool dir)
 {
-	int flags = O_RDWR;
+	int flags = O_RDWR | O_CLOEXEC;
 
 	if (dir)
 		flags |= O_DIRECTORY;
@@ -66,7 +66,7 @@ static int mapped_open_path(const char *name, bool dir)
 
 static int mapped_openat_path(int dir_fd, const char *segment, bool dir)
 {
-	int flags = O_RDWR | O_NOFOLLOW;
+	int flags = O_RDWR | O_NOFOLLOW | O_CLOEXEC;
 
 	if (dir)
 		flags |= O_DIRECTORY;
@@ -134,8 +134,7 @@ static int mapped_openat(struct hexagonfs_fd *dir,
 
 	ctx->dir = NULL;
 
-	fd->is_assigned = false;
-	fd->up = dir;
+	fd->refcount = 1;
 	fd->ops = &hexagonfs_mapped_ops;
 	fd->data = ctx;
 
@@ -155,7 +154,9 @@ static ssize_t mapped_read(struct hexagonfs_fd *fd, size_t size, void *out)
 	struct mapped_ctx *ctx = fd->data;
 	ssize_t ret;
 
-	ret = read(ctx->fd, out, size);
+	do {
+		ret = read(ctx->fd, out, size);
+	} while (ret < 0 && errno == EINTR);
 	if (ret < 0)
 		return -errno;
 
@@ -185,6 +186,8 @@ static int mapped_readdir(struct hexagonfs_fd *fd, size_t size, char *out)
 		return -errno;
 	}
 
+	if (!size)
+		return -EINVAL;
 	strncpy(out, ent->d_name, size);
 	out[size - 1] = '\0';
 
@@ -194,7 +197,7 @@ static int mapped_readdir(struct hexagonfs_fd *fd, size_t size, char *out)
 static int mapped_seek(struct hexagonfs_fd *fd, off_t off, int whence)
 {
 	struct mapped_ctx *ctx = fd->data;
-	int ret;
+	off_t ret;
 
 	ret = lseek(ctx->fd, off, whence);
 	if (ret == -1)
@@ -208,7 +211,9 @@ static ssize_t mapped_write(struct hexagonfs_fd *fd, size_t size, const void *pt
 	struct mapped_ctx *ctx = fd->data;
 	ssize_t ret;
 
-	ret = write(ctx->fd, ptr, size);
+	do {
+		ret = write(ctx->fd, ptr, size);
+	} while (ret < 0 && errno == EINTR);
 	if (ret < 0)
 		return -errno;
 
@@ -245,7 +250,7 @@ static int mapped_stat(struct hexagonfs_fd *fd, struct stat *stats)
 	stats->st_ino = 0;
 	stats->st_nlink = 0;
 
-	if (phys.st_mode & S_IFDIR) {
+	if (S_ISDIR(phys.st_mode)) {
 		stats->st_mode = S_IFDIR
 			       | S_IRUSR | S_IXUSR
 			       | S_IRGRP | S_IXGRP
@@ -364,7 +369,7 @@ static int mapped_sysfs_stat(struct hexagonfs_fd *fd, struct stat *stats)
 	if (ret)
 		return ret;
 
-	if (!(stats->st_mode & S_IFDIR))
+	if (!S_ISDIR(stats->st_mode))
 		stats->st_size = 256;
 
 	return 0;
